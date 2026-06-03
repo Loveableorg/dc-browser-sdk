@@ -22,7 +22,7 @@ access). No privilege escalation happens inside the SDK.
   `DiagramCraftClient` to the current Supabase session and
   (optionally) the current diagram id derived from the URL.
 - `sdk/DiagramCraftClient.ts` — the SDK class itself.
-- `domain/`, `diagram/`, `encoding/`, `errors/`, `tutorial/`
+- `domain/`, `encoding/`, `errors/`, `tutorial/`
   — the cross-runtime helpers the SDK depends on. Published
   as-is purely so the SDK file is self-explanatory; they are
   not a stable public API.
