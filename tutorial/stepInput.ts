@@ -20,6 +20,7 @@ const METADATA_KEYS = [
   "detourPrompt",
   "cardSize",
   "richContentBase64",
+  "richContentFormat",
   "captureVariable",
   "setVariable",
   "branchOnVariable",

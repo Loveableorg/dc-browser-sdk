@@ -122,6 +122,17 @@ export interface TutorialStep {
   cardSize?: "normal" | "large" | "wide";
   detourPrompt?: string;
   richContentBase64?: string;
+  /**
+   * Render format for `richContentBase64`. Defaults to `"markdown"` for
+   * back-compat. Set to `"html"` to render the decoded payload inside a
+   * locked-down sandboxed iframe (full HTML document srcDoc). Set to
+   * `"jsx"` to ship a single-file React component (must `export default`
+   * a component) — the host transforms it with Babel-standalone and
+   * renders it via react@18 inside the same sandbox. Used by tutorial
+   * authors who want fully custom interactive explainers; sandboxed so
+   * the embedded code can't reach the host app's storage or auth.
+   */
+  richContentFormat?: "markdown" | "html" | "jsx";
   choices?: TutorialChoice[];
   captureVariable?: CaptureVariablePayload;
   setVariable?: { name: string; value: unknown; reason?: string };
