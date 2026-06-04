@@ -30,6 +30,8 @@ import {
 import { ensureBase64 } from "../encoding/base64.ts";
 import { NotFoundError, ValidationError } from "../errors/index.ts";
 import { buildStepRows } from "../tutorial/stepInput.ts";
+import { tutorialMutatesDiagram } from "../tutorial/mutationHeuristic.ts";
+
 
 export interface DiagramCraftClientOptions {
   /** Optional default diagram id; methods accept an override per call. */
@@ -263,11 +265,16 @@ export class DiagramCraftClient {
       steps?: Array<TutorialStep | Record<string, unknown>>;
       isArchetype?: boolean;
       isVisible?: boolean;
+      replayable?: boolean;
     },
     opts: { createdBy?: string | null } = {},
-  ): Promise<{ id: string; stepCount: number }> {
+  ): Promise<{ id: string; stepCount: number; hasMutations: boolean }> {
     if (!payload.label?.trim()) throw new ValidationError("label is required");
     const topicId = payload.topicId ?? `arch-${crypto.randomUUID()}`;
+    const steps = (payload.steps ?? []) as Array<Record<string, unknown>>;
+    // Always compute server-side; author hints are ignored. See spec
+    // "hasMutations field" — must be verified at save time.
+    const hasMutations = tutorialMutatesDiagram(steps);
     const row: Record<string, unknown> = {
       topic_id: topicId,
       label: payload.label,
@@ -282,6 +289,8 @@ export class DiagramCraftClient {
       base_diagram: payload.baseDiagram ?? null,
       is_archetype: payload.isArchetype ?? false,
       is_visible: payload.isVisible ?? false,
+      replayable: payload.replayable ?? false,
+      has_mutations: hasMutations,
     };
     if (opts.createdBy) row.created_by = opts.createdBy;
     const { data: tut, error } = await this.sb
@@ -293,7 +302,6 @@ export class DiagramCraftClient {
       throw new Error(`createTutorial insert failed: ${error?.message ?? "no id returned"}`);
     }
     const tutorialId = (tut as { id: string }).id;
-    const steps = (payload.steps ?? []) as Array<Record<string, unknown>>;
     if (steps.length > 0) {
       const rows = buildStepRows(tutorialId, steps);
       const { error: sErr } = await this.sb
@@ -301,8 +309,9 @@ export class DiagramCraftClient {
         .insert(rows);
       if (sErr) throw new Error(`Steps insert failed: ${sErr.message}`);
     }
-    return { id: tutorialId, stepCount: steps.length };
+    return { id: tutorialId, stepCount: steps.length, hasMutations };
   }
+
 
   /**
    * Patch top-level fields on a tutorial/archetype. Accepts camelCase;
@@ -323,6 +332,7 @@ export class DiagramCraftClient {
       baseDiagram?: Record<string, unknown> | null;
       isArchetype?: boolean;
       isVisible?: boolean;
+      replayable?: boolean;
     },
   ): Promise<{ id: string; updated: string[] }> {
     const map: Record<string, string> = {
@@ -338,6 +348,7 @@ export class DiagramCraftClient {
       baseDiagram: "base_diagram",
       isArchetype: "is_archetype",
       isVisible: "is_visible",
+      replayable: "replayable",
     };
     const cleaned: Record<string, unknown> = {};
     for (const [k, dbKey] of Object.entries(map)) {
@@ -356,13 +367,17 @@ export class DiagramCraftClient {
   /**
    * Replace all steps for a tutorial atomically (delete-then-insert).
    * Used by MCP update_archetype_steps and any future step editor UI.
+   * Recomputes `has_mutations` from the new step list and persists it
+   * — see mutationHeuristic.ts. The stored value is what gates the
+   * Replayable Archetypes play button for non-editor viewers.
    */
   async replaceTutorialSteps(
     id: string,
     steps: Array<TutorialStep | Record<string, unknown>>,
-  ): Promise<{ id: string; stepCount: number }> {
+  ): Promise<{ id: string; stepCount: number; hasMutations: boolean }> {
     await this.sb.from("custom_tutorial_steps").delete().eq("tutorial_id", id);
     const stepArr = steps as Array<Record<string, unknown>>;
+    const hasMutations = tutorialMutatesDiagram(stepArr);
     if (stepArr.length > 0) {
       const rows = buildStepRows(id, stepArr);
       const { error } = await this.sb
@@ -370,9 +385,16 @@ export class DiagramCraftClient {
         .insert(rows);
       if (error) throw new Error(error.message);
     }
-    return { id, stepCount: stepArr.length };
+    // Persist the computed hint so the play-button query doesn't need to
+    // re-walk steps on every diagram open.
+    await this.sb
+      .from("custom_tutorials")
+      .update({ has_mutations: hasMutations })
+      .eq("id", id);
+    return { id, stepCount: stepArr.length, hasMutations };
   }
 }
+
 
 function decodeUtf8Base64(b64: string): string {
   // atob is universal (browser + Deno). decodeURIComponent/escape pair
