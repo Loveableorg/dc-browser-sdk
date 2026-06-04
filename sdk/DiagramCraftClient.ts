@@ -24,6 +24,7 @@ import {
   insertElementTree,
   insertVariables,
   mergeChildrenTree,
+  normalizeBaseDiagram,
   resolveElementByPath,
   resolveParentByPath,
 } from "../diagram/tree.ts";
@@ -31,6 +32,30 @@ import { ensureBase64 } from "../encoding/base64.ts";
 import { NotFoundError, ValidationError } from "../errors/index.ts";
 import { buildStepRows } from "../tutorial/stepInput.ts";
 import { tutorialMutatesDiagram } from "../tutorial/mutationHeuristic.ts";
+
+/**
+ * Replayable archetypes REQUIRE a base_diagram with at least one element.
+ * The play button is rendered on the scaffolded element; without one there
+ * is no host for the button and `add_archetype_to_diagram` would silently
+ * create an orphan tutorial_sessions row that the user can never trigger.
+ * Throws ValidationError so the create/update call fails loudly.
+ */
+export function assertReplayableHasBase(
+  replayable: boolean,
+  baseDiagram: unknown,
+): void {
+  if (!replayable) return;
+  const { elements } = normalizeBaseDiagram(baseDiagram);
+  if (!elements.length) {
+    throw new ValidationError(
+      "Replayable archetypes require a base_diagram with at least one element. " +
+      "The play button is anchored to the scaffolded root element — without one " +
+      "the archetype has no host and users cannot trigger it. Add at least one " +
+      "element to base_diagram (e.g. `{ elements: [{ name: \"My Guide\" }] }`) " +
+      "or set replayable=false to author a normal auto-start tutorial.",
+    );
+  }
+}
 
 
 export interface DiagramCraftClientOptions {
@@ -276,6 +301,7 @@ export class DiagramCraftClient {
     opts: { createdBy?: string | null } = {},
   ): Promise<{ id: string; stepCount: number; hasMutations: boolean }> {
     if (!payload.label?.trim()) throw new ValidationError("label is required");
+    assertReplayableHasBase(payload.replayable ?? false, payload.baseDiagram);
     const topicId = payload.topicId ?? `arch-${crypto.randomUUID()}`;
     const steps = (payload.steps ?? []) as Array<Record<string, unknown>>;
     const detected = tutorialMutatesDiagram(steps);
@@ -371,6 +397,18 @@ export class DiagramCraftClient {
       if (v !== undefined) cleaned[dbKey] = v;
     }
     if (Object.keys(cleaned).length === 0) return { id, updated: [] };
+    // If this patch could leave the archetype in (replayable=true, base_diagram=empty),
+    // re-validate against current row state before writing.
+    if (patch.replayable === true || patch.baseDiagram !== undefined) {
+      const { data: current } = await this.sb
+        .from("custom_tutorials")
+        .select("replayable, base_diagram")
+        .eq("id", id)
+        .maybeSingle();
+      const nextReplayable = patch.replayable ?? current?.replayable ?? false;
+      const nextBase = patch.baseDiagram !== undefined ? patch.baseDiagram : current?.base_diagram;
+      assertReplayableHasBase(nextReplayable, nextBase);
+    }
     const { error } = await this.sb
       .from("custom_tutorials")
       .update(cleaned)
