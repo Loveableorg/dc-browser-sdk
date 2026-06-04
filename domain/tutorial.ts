@@ -151,6 +151,37 @@ export interface CreateTutorialPayload {
   isArchetype?: boolean;
   /** Defaults to false for archetypes created via MCP. */
   isVisible?: boolean;
+  /**
+   * Replayable Archetypes (Presentation Mode). When true (only valid with
+   * isArchetype:true) the archetype is launched via a ▶ play button rendered
+   * on the scaffolded subtree root — it does NOT auto-start when the diagram
+   * opens, and it can be replayed any number of times. See §14 of the
+   * Tutorial Import Specification for the full authoring guide.
+   *
+   * Workspace role visibility: the play button is visible to every viewer
+   * (incl. read-only). Whether they can actually play is gated by
+   * hasMutations (see `hasMutationsHint`).
+   */
+  replayable?: boolean;
+  /**
+   * Three-way author contract for the mutation flag. The server ALWAYS
+   * derives `has_mutations` from the step list via
+   * `_shared/lib/tutorial/mutationHeuristic.ts`; this hint controls how
+   * the derived value is reconciled with the author's declaration:
+   *
+   *   - `null`/omitted: server decides via the heuristic (recommended).
+   *   - `true`:  conservative override — declared mutating regardless of
+   *              heuristic. Use when scripts produce external side effects
+   *              the heuristic can't see (HTTP calls, etc.). Restricts
+   *              playback to editors.
+   *   - `false`: author asserts read-only. If the heuristic detects ANY
+   *              mutating step (or any `it.dc.*` use inside a script),
+   *              `createTutorial` throws a ValidationError —
+   *              "has_mutations was declared false, but the step list
+   *              contains diagram-mutating operations". On success the
+   *              archetype is playable by read-only workspace viewers.
+   */
+  hasMutationsHint?: boolean | null;
 }
 
 export interface UpdateTutorialPatch {
@@ -166,4 +197,7 @@ export interface UpdateTutorialPatch {
   baseDiagram?: Record<string, unknown> | null;
   isArchetype?: boolean;
   isVisible?: boolean;
+  /** Toggle Presentation Mode on an existing archetype. See CreateTutorialPayload.replayable. */
+  replayable?: boolean;
 }
+
