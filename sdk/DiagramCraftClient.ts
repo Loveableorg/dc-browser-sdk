@@ -266,15 +266,30 @@ export class DiagramCraftClient {
       isArchetype?: boolean;
       isVisible?: boolean;
       replayable?: boolean;
+      /** Optional author assertion. `false` + heuristic-detected mutation
+       *  → throws ValidationError (the safety claim doesn't hold and
+       *  workspace viewers would be blocked from playing it). `true`
+       *  is always accepted (authors may know about runtime side-effects
+       *  the text-level scan can't see). Omitted → server decides. */
+      hasMutationsHint?: boolean | null;
     },
     opts: { createdBy?: string | null } = {},
   ): Promise<{ id: string; stepCount: number; hasMutations: boolean }> {
     if (!payload.label?.trim()) throw new ValidationError("label is required");
     const topicId = payload.topicId ?? `arch-${crypto.randomUUID()}`;
     const steps = (payload.steps ?? []) as Array<Record<string, unknown>>;
-    // Always compute server-side; author hints are ignored. See spec
-    // "hasMutations field" — must be verified at save time.
-    const hasMutations = tutorialMutatesDiagram(steps);
+    const detected = tutorialMutatesDiagram(steps);
+    if (payload.hasMutationsHint === false && detected) {
+      throw new ValidationError(
+        "has_mutations was declared false, but the step list contains diagram-mutating operations " +
+        "(mutationHeuristic.ts matched a completion_event in MUTATING_COMPLETION_EVENTS, " +
+        "or a run_script that references `it.dc`). Either remove the mutating steps, set " +
+        "has_mutations: true, or omit the field and let the server decide. Mutating archetypes " +
+        "cannot be played by workspace viewers (editor role required).",
+      );
+    }
+    // Author may force `true` (conservative). Server-detected `true` always wins.
+    const hasMutations = detected || payload.hasMutationsHint === true;
     const row: Record<string, unknown> = {
       topic_id: topicId,
       label: payload.label,
