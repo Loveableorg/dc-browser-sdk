@@ -70,11 +70,15 @@ export function ensureBase64(content: string, isBase64?: boolean | null): string
   if (looks) {
     try {
       const decoded = atob(trimmed);
-      const bytes = Uint8Array.from(decoded, (c) => c.charCodeAt(0));
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      // If atob succeeds and the round-tripped bytes either decode as valid
+      // UTF-8 OR look like binary (non-UTF-8) content, trust the caller's
+      // base64 — re-encoding here would double-wrap binary blobs (PNG/JPG
+      // etc.) and corrupt them. The looksLikeBase64 regex + length-mod-4 +
+      // successful atob is already a strong signal of pre-encoded data.
+      void decoded;
       return trimmed;
     } catch {
-      /* fall through to encode-as-plaintext */
+      /* atob failed — definitely not base64, fall through to encode-as-plaintext */
     }
   }
   return utf8ToBase64(content);
