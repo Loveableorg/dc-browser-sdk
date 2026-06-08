@@ -10,6 +10,15 @@
 // cardSize, richContentBase64, plus the discriminator `type`) are folded
 // into the `step_metadata` JSON column — same convention used by
 // src/pages/ImportTutorial.tsx so the engine reads them identically.
+//
+// Plaintext rich_content ergonomics: callers (notably Gemini, which
+// frequently mangles base64 payloads) may pass `richContent` /
+// `rich_content` (or `richContentText` / `rich_content_text`) as plain
+// UTF-8 text. We auto-encode to base64 on the server so authors never
+// have to round-trip through `btoa`. If both plaintext and
+// `richContentBase64` are present, the explicit base64 wins.
+import { utf8ToBase64 } from "../encoding/base64.ts";
+
 /** Permissive — we hand-pick known fields and pass through extras into
  *  step_metadata so the spec can evolve without redeploying the MCP. */
 export type TutorialStepInput = Record<string, unknown>;
@@ -68,6 +77,21 @@ export function buildStepRow(
     if (v === undefined || v === null) continue;
     if (k === "cardSize" && v === "normal") continue;
     metadata[k] = v;
+  }
+
+  // Plaintext rich_content → base64 auto-encode. Explicit
+  // richContentBase64 (set above) takes precedence.
+  if (metadata.richContentBase64 === undefined) {
+    const plain = pick<string>(
+      step,
+      "richContent",
+      "rich_content",
+      "richContentText",
+      "rich_content_text",
+    );
+    if (typeof plain === "string" && plain.length > 0) {
+      metadata.richContentBase64 = utf8ToBase64(plain);
+    }
   }
 
   return {
