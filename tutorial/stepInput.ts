@@ -37,6 +37,9 @@ const METADATA_KEYS = [
   "forEach",
   "whileCondition",
   "selectTargetElements",
+  // show_source_annotation step — opens IDE on an element, highlights a line
+  // range, and renders a speech bubble. See TutorialImportSpec §`show_source_annotation`.
+  "showSourceAnnotation",
 ] as const;
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {

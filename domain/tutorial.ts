@@ -23,7 +23,8 @@ export type TutorialStepType =
   | "run_script_async"
   | "for_each"
   | "while_condition"
-  | "select_target_elements";
+  | "select_target_elements"
+  | "show_source_annotation";
 
 export type TutorialPhase = "intro" | "guided_project";
 
