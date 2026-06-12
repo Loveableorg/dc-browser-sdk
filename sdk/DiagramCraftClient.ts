@@ -126,6 +126,24 @@ export class DiagramCraftClient {
     return { content, filename: sc.file_name };
   }
 
+  /**
+   * Return the locality-first resolved variable scope at `path` (or
+   * diagram-wide when omitted). Mirrors the MCP `get_resolved_scope`
+   * tool — see `resolveScope` in tools/variables.ts for shape details.
+   * Use this from tutorial scripts to inspect what `it.*` would
+   * contain at any element without running the template engine.
+   */
+  async getResolvedScope(
+    path?: string | null,
+    diagramId?: string,
+  ) {
+    const id = this.requireDiagramId(diagramId);
+    const { resolveScope } = await import("../diagram/scope.ts");
+    return await resolveScope(this.sb, id, path ?? null);
+  }
+
+
+
 
   // ─── Mutations ─────────────────────────────────────────────────
   /**
