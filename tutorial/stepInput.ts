@@ -40,6 +40,9 @@ const METADATA_KEYS = [
   // show_source_annotation step — opens IDE on an element, highlights a line
   // range, and renders a speech bubble. See TutorialImportSpec §`show_source_annotation`.
   "showSourceAnnotation",
+  // show_element_annotation step — navigates scope to a diagram element,
+  // scrolls it into view, and renders a speech bubble.
+  "showElementAnnotation",
 ] as const;
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {

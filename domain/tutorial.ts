@@ -24,7 +24,8 @@ export type TutorialStepType =
   | "for_each"
   | "while_condition"
   | "select_target_elements"
-  | "show_source_annotation";
+  | "show_source_annotation"
+  | "show_element_annotation";
 
 export type TutorialPhase = "intro" | "guided_project";
 
