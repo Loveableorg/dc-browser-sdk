@@ -327,9 +327,10 @@ export class DiagramCraftClient {
       throw new ValidationError(
         "has_mutations was declared false, but the step list contains diagram-mutating operations " +
         "(mutationHeuristic.ts matched a completion_event in MUTATING_COMPLETION_EVENTS, " +
-        "or a run_script that references `it.dc`). Either remove the mutating steps, set " +
-        "has_mutations: true, or omit the field and let the server decide. Mutating archetypes " +
-        "cannot be played by workspace viewers (editor role required).",
+        "or a run_script that calls a non-whitelisted `it.dc.*` method — only getElement, " +
+        "getSourceCode, getResolvedScope, and withDiagram are treated as read-only). Either " +
+        "remove the mutating steps, set has_mutations: true, or omit the field and let the " +
+        "server decide. Mutating archetypes cannot be played by workspace viewers (editor role required).",
       );
     }
     // Author may force `true` (conservative). Server-detected `true` always wins.

@@ -54,6 +54,11 @@ export const MUTATING_COMPLETION_EVENTS: ReadonlySet<string> = new Set([
   "diagram_ref_added",
   "project_root_set",
   "ide_saved",
+  // NOTE: read-only step completion events that should NEVER appear here:
+  //   text_modal_dismissed, variable_captured, variable_set,
+  //   targets_selected, script_completed (script body is inspected
+  //   separately via scriptUsesDcSdk), source_annotation_dismissed,
+  //   element_annotation_dismissed, scope_navigated.
 ]);
 
 /**
@@ -63,18 +68,21 @@ export const MUTATING_COMPLETION_EVENTS: ReadonlySet<string> = new Set([
  * a call against the DC SDK. Keep tight — false negatives here let mutating
  * archetypes claim `hasMutations:false` and play for workspace viewers.
  *
- * Mirrors `_shared/lib/sdk/DiagramCraftClient.ts`; update both together.
+ * Mirrors the read-only methods on `DiagramCraftClient` in
+ * `_shared/lib/sdk/DiagramCraftClient.ts`; update both together.
  */
 export const DC_SDK_READONLY_METHODS: ReadonlySet<string> = new Set([
-  // SDK reads
+  // SDK reads (pure queries, no writes)
   "getElement",
   "getSourceCode",
+  "getResolvedScope",
   // Client construction helpers (return a re-bound client, no IO yet)
   "withDiagram",
   // Generic JS niceties that may appear on `dc` when authors chain
   "toString",
   "valueOf",
 ]);
+
 
 // ───────────────────────────────────────────────────────────────────────────
 // AST inspector
