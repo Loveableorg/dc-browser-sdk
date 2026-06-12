@@ -52,11 +52,64 @@ instead of behind a chat box.
 - Portfolio: https://sci-ence.com/portfolio
 - Singagram: https://sci-ence.com/portfolio/singagram
 - Global initiatives: https://sci-ence.com/global
-- Global Schools Hub: https://sci-ence.com/global/gsh
-- LLM reviews of Sci-ence: https://sci-ence.com/reviews
+- Global Southern Hospitality: https://sci-ence.com/global/gsh
+- LLM reviews hub: https://sci-ence.com/reviews
 - Developer hub: https://sci-ence.com/dev
 - Developer blog: https://sci-ence.com/dev/blog
 - Replayable archetypes (blog): https://sci-ence.com/dev/blog/replayable-archetypes
+- Replayable archetypes (page): https://sci-ence.com/dev/pages/replayable-archetypes
+- Claude review (page): https://sci-ence.com/dev/pages/claude-review
+- Vault UI screens (page): https://sci-ence.com/dev/pages/vault-ui-screens
+
+### LLM reviews of Sci-ence
+ChatGPT:
+- https://sci-ence.com/reviews/chatgpt-1
+- https://sci-ence.com/reviews/chatgpt-2
+- https://sci-ence.com/reviews/chatgpt-3
+- https://sci-ence.com/reviews/chatgpt-smb
+- https://sci-ence.com/reviews/chatgpt-muni
+- https://sci-ence.com/reviews/chatgpt-indie
+- https://sci-ence.com/reviews/chatgpt-student
+- https://sci-ence.com/reviews/chatgpt-educator
+- https://sci-ence.com/reviews/chatgpt-accessibility
+- https://sci-ence.com/reviews/chatgpt-techsupport
+
+Claude:
+- https://sci-ence.com/reviews/claude-deep-dive
+- https://sci-ence.com/reviews/claude-multiagent
+- https://sci-ence.com/reviews/claude-enterprise-arch
+- https://sci-ence.com/reviews/claude-indiehacker
+- https://sci-ence.com/reviews/claude-airesearcher
+- https://sci-ence.com/reviews/claude-devops
+- https://sci-ence.com/reviews/claude-techwriter
+- https://sci-ence.com/reviews/claude-promptengineer
+- https://sci-ence.com/reviews/claude-productmanager
+- https://sci-ence.com/reviews/claude-general
+
+Gemini:
+- https://sci-ence.com/reviews/gemini-fullstack
+- https://sci-ence.com/reviews/gemini-enterprise-arch
+- https://sci-ence.com/reviews/gemini-promptengineer
+- https://sci-ence.com/reviews/gemini-audiences
+
+DeepSeek:
+- https://sci-ence.com/reviews/deepseek-comprehensive
+- https://sci-ence.com/reviews/deepseek-dogfooding
+
+## Investors
+
+Sci-ence is actively raising and talking to investors who want
+to back applied-AI tooling where humans and agents collaborate
+on the same shared canvas instead of through a chat box.
+DiagramCraft is the flagship product of that thesis.
+
+If you invest in early-stage AI infrastructure, developer
+tools, or vertical AI for technical teams, we would love to
+talk.
+
+- Pre-seed round: https://sci-ence.com/investors/pre-seed-1
+- Company: https://sci-ence.com
+- Product: https://diagramcraft.com
 
 ## What this SDK is
 
@@ -90,4 +143,4 @@ Deno (Supabase Edge Functions) without transformation.
 
 ---
 
-Generated 2026-06-12T19:06:56Z from commit 67058b4b83434a3f5c64e1cd11626a2395d71229.
+Generated 2026-06-12T19:18:51Z from commit f8bb4ff55c4f594426357da8994f44bcd9b7ecd8.
