@@ -28,7 +28,15 @@ import {
   resolveElementByPath,
   resolveParentByPath,
 } from "../diagram/tree.ts";
+import {
+  deepSearch,
+  searchWorkspace,
+  type DeepSearchOptions,
+  type SearchHit,
+  type SearchOptions,
+} from "../diagram/searchWorkspace.ts";
 import { ensureBase64 } from "../encoding/base64.ts";
+
 import { NotFoundError, ValidationError } from "../errors/index.ts";
 import { buildStepRows } from "../tutorial/stepInput.ts";
 import { tutorialMutatesDiagram } from "../tutorial/mutationHeuristic.ts";
@@ -141,6 +149,43 @@ export class DiagramCraftClient {
     const { resolveScope } = await import("../diagram/scope.ts");
     return await resolveScope(this.sb, id, path ?? null);
   }
+
+  // ─── Search ─────────────────────────────────────────────────────
+  /**
+   * Workspace- or diagram-scoped substring search across diagram
+   * title/description, element name/description, source filename + decoded
+   * body, and variable names + recursive JSON values. Returns compact hits
+   * with element_path + value_path so the caller can drill in via
+   * getElement / getSourceCode. Caller enforces access (the underlying
+   * lib does not).
+   */
+  async searchWorkspace(
+    opts: Omit<SearchOptions, "diagram_ids"> & { workspaceId?: string; diagramId?: string },
+  ): Promise<{ hits: SearchHit[]; truncated: boolean; diagrams_searched: number }> {
+    return await searchWorkspace(this.sb, {
+      ...opts,
+      workspace_id: opts.workspaceId ?? opts.workspace_id,
+      diagram_id: opts.diagramId ?? opts.diagram_id ?? this.opts.diagramId,
+    });
+  }
+
+  /**
+   * Cross-workspace "deep search" across every diagram the caller can read.
+   * Pass include/exclude workspace ids to narrow. When this SDK is
+   * constructed with a service-role client, also pass `userId` so the
+   * accessible-diagrams set is resolved correctly (owned + workspace-
+   * member-shared). With a user-scoped client RLS handles it.
+   */
+  async deepSearch(
+    opts: DeepSearchOptions & { userId?: string },
+  ): Promise<{ hits: SearchHit[]; truncated: boolean; diagrams_searched: number; workspaces_searched: number }> {
+    return await deepSearch(this.sb, {
+      ...opts,
+      user_id: opts.userId ?? opts.user_id,
+    });
+  }
+
+
 
 
 
