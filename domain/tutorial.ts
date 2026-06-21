@@ -10,6 +10,9 @@
 // ../tutorial/stepInput.ts.
 
 import type { VariableDefinitionLike } from "./types.ts";
+import type { ConstructKind, ImportDiagramElement } from "./constructImport.ts";
+
+export type { ConstructKind, ImportDiagramElement } from "./constructImport.ts";
 
 export type TutorialStepType =
   | "standard"
@@ -160,6 +163,26 @@ export interface CreateTutorialPayload {
   tips?: string[];
   variableDefinitions?: VariableDefinitionLike[];
   baseDiagram?: Record<string, unknown> | null;
+  /**
+   * Optional structured seed payload (preferred over legacy `baseDiagram`).
+   * Discriminated union:
+   *   - `{ kind: "diagram",   ... ImportDiagram   }` — single host diagram
+   *     scaffolded under the chosen parent element. Required shape for
+   *     diagram-bound constructs (`constructKind: "diagram"`).
+   *   - `{ kind: "workspace", ... ImportWorkspace }` — seeds a workspace
+   *     with any number of diagrams (and, when the data model supports it,
+   *     nested workspaces / folders). Required shape for workspace
+   *     constructs (`constructKind: "workspace"`).
+   * See `_shared/lib/domain/constructImport.ts`.
+   */
+  seed?: ImportDiagramElement | null;
+  /**
+   * Construct host surface — drives which SDK is bound into tutorial
+   * scripts (`it.dc` for "diagram", `it.sc` for "workspace"), which
+   * mutation-heuristic allow-list applies, and which catalog table the
+   * row is written to. Defaults to "diagram" for back-compat.
+   */
+  constructKind?: ConstructKind;
   steps?: TutorialStep[];
   isArchetype?: boolean;
   /** Defaults to false for archetypes created via MCP. */
@@ -169,7 +192,7 @@ export interface CreateTutorialPayload {
    * isArchetype:true) the archetype is launched via a ▶ play button rendered
    * on the scaffolded subtree root — it does NOT auto-start when the diagram
    * opens, and it can be replayed any number of times. See §14 of the
-   * Tutorial Import Specification for the full authoring guide.
+   * Construct Import Specification for the full authoring guide.
    *
    * Workspace role visibility: the play button is visible to every viewer
    * (incl. read-only). Whether they can actually play is gated by
@@ -188,11 +211,10 @@ export interface CreateTutorialPayload {
    *              the heuristic can't see (HTTP calls, etc.). Restricts
    *              playback to editors.
    *   - `false`: author asserts read-only. If the heuristic detects ANY
-   *              mutating step (or any `it.dc.*` use inside a script),
-   *              `createTutorial` throws a ValidationError —
-   *              "has_mutations was declared false, but the step list
-   *              contains diagram-mutating operations". On success the
-   *              archetype is playable by read-only workspace viewers.
+   *              mutating step (or any `it.dc.*` / `it.sc.*` use outside
+   *              its read-only allow-list), `createTutorial` throws a
+   *              ValidationError. On success the construct is playable
+   *              by read-only workspace viewers.
    */
   hasMutationsHint?: boolean | null;
 }

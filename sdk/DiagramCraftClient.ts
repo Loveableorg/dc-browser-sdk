@@ -77,8 +77,8 @@ export interface DiagramCraftClientOptions {
  */
 export class DiagramCraftClient {
   constructor(
-    private readonly sb: SupabaseClient,
-    private readonly opts: DiagramCraftClientOptions = {},
+    protected readonly sb: SupabaseClient,
+    protected readonly opts: DiagramCraftClientOptions = {},
   ) {}
 
   /** Return a new client bound to a specific diagram id. */
@@ -86,7 +86,7 @@ export class DiagramCraftClient {
     return new DiagramCraftClient(this.sb, { ...this.opts, diagramId });
   }
 
-  private requireDiagramId(diagramId?: string): string {
+  protected requireDiagramId(diagramId?: string): string {
     const id = diagramId ?? this.opts.diagramId;
     if (!id) {
       throw new ValidationError(

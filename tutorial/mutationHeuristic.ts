@@ -83,6 +83,31 @@ export const DC_SDK_READONLY_METHODS: ReadonlySet<string> = new Set([
   "valueOf",
 ]);
 
+/**
+ * Workspace SDK (`it.sc` — SpaceCraftClient) read-only allow-list.
+ *
+ * SpaceCraftClient is a superset of DiagramCraftClient (every DC method
+ * is callable on `sc`), so we union DC_SDK_READONLY_METHODS in below.
+ * Workspace-only reads add: list diagrams, list members, fetch workspace
+ * variables, get the workspace structural snapshot. Mirrors the READ-
+ * ONLY methods in `_shared/lib/sdk/SpaceCraftClient.ts` — update both
+ * together.
+ *
+ * Anything NOT listed here (or in DC_SDK_READONLY_METHODS) is treated as
+ * a mutation when the AST inspector finds a call against `it.sc`.
+ */
+export const SC_SDK_READONLY_METHODS: ReadonlySet<string> = new Set([
+  ...DC_SDK_READONLY_METHODS,
+  // Workspace-level reads
+  "listWorkspaceDiagrams",
+  "listWorkspaceMembers",
+  "getWorkspaceVariables",
+  "getWorkspaceStructure",
+  // Client re-binding helpers
+  "withWorkspace",
+]);
+
+
 
 // ───────────────────────────────────────────────────────────────────────────
 // AST inspector
@@ -96,13 +121,23 @@ type Node = any;
 /** True if `node` is a MemberExpression resolving to `it.dc` (with optional
  *  computed `it["dc"]`). */
 function isItDc(node: Node): boolean {
+  return isItProp(node, "dc");
+}
+
+/** True if `node` is a MemberExpression resolving to `it.sc` (the
+ *  workspace-level SpaceCraftClient). */
+function isItSc(node: Node): boolean {
+  return isItProp(node, "sc");
+}
+
+function isItProp(node: Node, prop: "dc" | "sc"): boolean {
   if (!node || node.type !== "MemberExpression") return false;
   const obj = node.object;
   if (!obj || obj.type !== "Identifier" || obj.name !== "it") return false;
   if (node.computed) {
-    return node.property?.type === "Literal" && node.property.value === "dc";
+    return node.property?.type === "Literal" && node.property.value === prop;
   }
-  return node.property?.type === "Identifier" && node.property.name === "dc";
+  return node.property?.type === "Identifier" && node.property.name === prop;
 }
 
 /** Extract the static method name from a MemberExpression like `<obj>.foo`
@@ -117,6 +152,7 @@ function staticMemberName(node: Node): string | null {
   }
   return node.property?.type === "Identifier" ? node.property.name : null;
 }
+
 
 /** Recursively walk every child node of `n`, invoking `visit` on each.
  *  Lightweight DIY walker so we don't depend on acorn-walk. */
@@ -136,31 +172,28 @@ function walk(n: Node, visit: (node: Node) => void): void {
 }
 
 /**
- * AST-level inspection. Returns true iff the script contains at least one
- * DC SDK reference (call or property access) whose method name is NOT in
- * `DC_SDK_READONLY_METHODS`. Tracks two aliasing patterns:
+ * AST-level inspection. Returns true iff the script contains at least
+ * one DC or SC SDK reference (call or property access) whose method
+ * name is NOT in the corresponding allow-list. SpaceCraftClient (`it.sc`)
+ * is a superset of DiagramCraftClient — workspace constructs may also
+ * use `it.dc` directly, so we scan both bindings.
  *
+ * Aliasing patterns tracked (for each of `dc` / `sc`):
  *   const { dc } = it;           // destructured top-level binding
  *   const x  = it.dc;            // single-identifier alias
  *   const x  = it["dc"];         // computed form
  *
- * Anything else (re-aliased aliases, dynamic property access, spreading
- * `it`, eval, etc.) falls through to the conservative regex check.
- *
- * Parse failures => conservative `true` if the regex check still trips on
- * `it.dc`; otherwise `false`. This means a syntactically broken script
- * that nonetheless mentions `it.dc` is treated as a mutation.
+ * Parse failures fall back to a regex check that conservatively flags
+ * any mention of `it.dc` or `it.sc`.
  */
 export function scriptUsesDcSdk(source: string): boolean {
   if (!source || typeof source !== "string") return false;
 
-  // Cheap pre-filter: no mention of `dc` at all → definitely safe.
-  if (!/\bdc\b/.test(source)) return false;
+  // Cheap pre-filter: no mention of `dc` or `sc` at all → definitely safe.
+  if (!/\b(dc|sc)\b/.test(source)) return false;
 
   let ast: Node;
   try {
-    // Tutorial scripts are evaluated as an async function body, so allow
-    // top-level await / return.
     ast = Parser.parse(source, {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -172,23 +205,19 @@ export function scriptUsesDcSdk(source: string): boolean {
     return regexFallback(source);
   }
 
-  // Identifier names known to alias `it.dc` (single-binding form).
+  // Collect aliases for both bindings.
   const dcAliases = new Set<string>();
-
-  // First pass: collect aliases from top-level VariableDeclarations.
-  // We're permissive — any depth qualifies as long as the RHS resolves
-  // statically to `it.dc` or `it`-destructure-of-dc.
+  const scAliases = new Set<string>();
   walk(ast, (node) => {
     if (node.type !== "VariableDeclarator") return;
     const init = node.init;
     if (!init) return;
-
-    // const x = it.dc;
-    if (isItDc(init) && node.id?.type === "Identifier") {
-      dcAliases.add(node.id.name);
-      return;
+    // const x = it.dc / it.sc
+    if (node.id?.type === "Identifier") {
+      if (isItDc(init)) dcAliases.add(node.id.name);
+      else if (isItSc(init)) scAliases.add(node.id.name);
     }
-    // const { dc, dc: alias } = it;
+    // const { dc, sc, dc: alias } = it;
     if (
       init.type === "Identifier" &&
       init.name === "it" &&
@@ -202,9 +231,11 @@ export function scriptUsesDcSdk(source: string): boolean {
           : key?.type === "Literal" && typeof key.value === "string"
             ? key.value
             : null;
-        if (keyName !== "dc") continue;
+        if (keyName !== "dc" && keyName !== "sc") continue;
         const val = prop.value;
-        if (val?.type === "Identifier") dcAliases.add(val.name);
+        if (val?.type === "Identifier") {
+          (keyName === "dc" ? dcAliases : scAliases).add(val.name);
+        }
       }
     }
   });
@@ -212,21 +243,22 @@ export function scriptUsesDcSdk(source: string): boolean {
   let mutatingFound = false;
   let safeFound = false;
 
-  // Second pass: every MemberExpression whose object resolves to dc.
   walk(ast, (node) => {
     if (node.type !== "MemberExpression") return;
 
-    // Resolve whether `node.object` is "dc": either `it.dc` directly or an
-    // identifier we've aliased to it.
-    let isDcAccess = false;
-    if (isItDc(node.object)) isDcAccess = true;
-    else if (
-      node.object?.type === "Identifier" &&
-      dcAliases.has(node.object.name)
-    ) {
-      isDcAccess = true;
+    // Which binding (if any) does node.object resolve to?
+    let kind: "dc" | "sc" | null = null;
+    if (isItDc(node.object)) kind = "dc";
+    else if (isItSc(node.object)) kind = "sc";
+    else if (node.object?.type === "Identifier") {
+      if (dcAliases.has(node.object.name)) kind = "dc";
+      else if (scAliases.has(node.object.name)) kind = "sc";
     }
-    if (!isDcAccess) return;
+    if (!kind) return;
+
+    const allow = kind === "dc"
+      ? DC_SDK_READONLY_METHODS
+      : SC_SDK_READONLY_METHODS;
 
     const methodName = staticMemberName(node);
     if (methodName === null) {
@@ -234,47 +266,39 @@ export function scriptUsesDcSdk(source: string): boolean {
       mutatingFound = true;
       return;
     }
-    if (DC_SDK_READONLY_METHODS.has(methodName)) {
+    if (allow.has(methodName)) {
       safeFound = true;
     } else {
       mutatingFound = true;
     }
   });
 
-  // Also: `it.dc` referenced without any property (e.g. `return it.dc`
-  // returns the client itself — could be passed elsewhere and used to
-  // mutate). Treat as mutation to stay safe.
+  // Bare `it.dc` / `it.sc` references (no property access) — could be
+  // passed elsewhere and used to mutate. Treat as conservative.
   walk(ast, (node) => {
-    if (!isItDc(node)) return;
-    // Already counted above if part of a deeper MemberExpression.
-    // Bare reference => conservative.
-    // (We can't easily check parent without a parent map, so we just
-    // mark mutating. False positives here are acceptable; authors who
-    // truly need to surface the client without using it can refactor.)
-    mutatingFound = true;
+    if (isItDc(node) || isItSc(node)) mutatingFound = true;
   });
 
   if (mutatingFound) return true;
-  // If we saw safe DC calls and no mutations, we're confident it's safe.
   if (safeFound) return false;
-  // No DC references found by the AST — but `dc` token appeared in source
-  // (comment, string, unrelated identifier). Safe.
   return false;
 }
 
-/** Regex fallback for unparseable source. Conservative: any `it.dc`
- *  reference counts as a mutation. */
+/** Regex fallback for unparseable source. Conservative: any `it.dc` /
+ *  `it.sc` reference counts as a mutation. */
 function regexFallback(source: string): boolean {
-  if (/\bit\s*\.\s*dc\b/.test(source)) return true;
-  if (/\bit\s*\[\s*['"]dc['"]\s*\]/.test(source)) return true;
+  if (/\bit\s*\.\s*(?:dc|sc)\b/.test(source)) return true;
+  if (/\bit\s*\[\s*['"](?:dc|sc)['"]\s*\]/.test(source)) return true;
   if (
-    /=\s*it\b[^;]*\bdc\b/.test(source) &&
-    /\{[^}]*\bdc\b[^}]*\}\s*=\s*it\b/.test(source)
+    /=\s*it\b[^;]*\b(?:dc|sc)\b/.test(source) &&
+    /\{[^}]*\b(?:dc|sc)\b[^}]*\}\s*=\s*it\b/.test(source)
   ) {
     return true;
   }
   return false;
 }
+
+
 
 // ───────────────────────────────────────────────────────────────────────────
 // Step-level predicates
