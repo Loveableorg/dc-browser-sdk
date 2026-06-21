@@ -43,6 +43,10 @@ const METADATA_KEYS = [
   // show_element_annotation step — navigates scope to a diagram element,
   // scrolls it into view, and renders a speech bubble.
   "showElementAnnotation",
+  // Workspace-construct primitives (see _shared/lib/domain/tutorial.ts).
+  "waitForCondition",
+  "selectWorkspaceTarget",
+  "forEachDiagramInWorkspace",
 ] as const;
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {

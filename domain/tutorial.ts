@@ -28,7 +28,20 @@ export type TutorialStepType =
   | "while_condition"
   | "select_target_elements"
   | "show_source_annotation"
-  | "show_element_annotation";
+  | "show_element_annotation"
+  // ── Workspace-construct primitives (added with constructKind:"workspace") ──
+  /** Polls a JS predicate (with `it.dc` + `it.sc` read-helpers in scope)
+   *  until it returns truthy or `timeoutMs` elapses. Non-blocking modal
+   *  surface with Skip / Abort controls. See `WaitForConditionPayload`. */
+  | "wait_for_condition"
+  /** Workspace analog of `select_target_elements`. Modal picker over the
+   *  workspaces the user owns/admins; optional inline-create.
+   *  See `SelectWorkspaceTargetPayload`. */
+  | "select_workspace_target"
+  /** Iterator sugar: resolves a workspace ref, then iterates every diagram
+   *  in it, exposing each as `it.<asVar> = { id, title }` to `bodySteps`.
+   *  See `ForEachDiagramInWorkspacePayload`. */
+  | "for_each_diagram_in_workspace";
 
 export type TutorialPhase = "intro" | "guided_project";
 
@@ -66,6 +79,61 @@ export interface ForEachPayload {
 
 export interface WhileConditionPayload {
   condition: string;
+  bodySteps: TutorialStep[];
+  maxIterations?: number;
+}
+
+/**
+ * Payload for `wait_for_condition`. Polls `predicate` (a JS expression or
+ * statement that evaluates to a truthy/falsy value) every `pollMs` until
+ * truthy OR `timeoutMs` elapses. The predicate runs in the same sandbox as
+ * `run_script` BUT only read-side SDK methods are exposed (see
+ * `DC_SDK_READONLY_METHODS` / `SC_SDK_READONLY_METHODS`); attempting to
+ * call a write method throws and the predicate is treated as falsy.
+ *
+ *   • `onTimeout: "halt"` (default) — aborts the tutorial with an error.
+ *   • `onTimeout: "continue"`        — advances to the next step.
+ *   • `onTimeout: "branch"`          — requires `choices` (like a `branch`
+ *                                       step); choiceIndex 0 = met,
+ *                                       1 = timed out.
+ *   • `allowSkip` adds a "Skip" button (skipping counts as met for
+ *      branching, but writes `it.<captureMetAs> = false` if set).
+ */
+export interface WaitForConditionPayload {
+  predicate: string;
+  pollMs?: number;
+  timeoutMs?: number;
+  onTimeout?: "halt" | "continue" | "branch";
+  modal?: { heading?: string; body?: string; skipLabel?: string; abortLabel?: string };
+  allowSkip?: boolean;
+  captureMetAs?: string;
+  imports?: string[];
+}
+
+/** Payload for `select_workspace_target`. Workspace analog of
+ *  `SelectTargetElementsPayload`. Picker shows workspaces where the user
+ *  has the listed `roles` (default `["owner","admin"]`). Result is written
+ *  to `variableName` as `[{ id, name }]` (multi) or `{ id, name }` (single). */
+export interface SelectWorkspaceTargetPayload {
+  variableName: string;
+  mode: "single" | "multiple";
+  minCount?: number;
+  maxCount?: number;
+  roles?: Array<"owner" | "admin" | "editor" | "viewer">;
+  /** When true, the picker shows an inline "Create new workspace" form. */
+  allowCreate?: boolean;
+  title?: string;
+  intro?: string;
+  buttonLabel?: string;
+}
+
+/** Payload for `for_each_diagram_in_workspace`. Resolves `workspaceRef`
+ *  (variable name, workspace id, or `{ id }` object) and iterates every
+ *  diagram inside it. `bodySteps` see `it.<asVar> = { id, title }`. */
+export interface ForEachDiagramInWorkspacePayload {
+  workspaceRef: string;
+  asVar: string;
+  indexVar?: string;
   bodySteps: TutorialStep[];
   maxIterations?: number;
 }
@@ -146,6 +214,9 @@ export interface TutorialStep {
   forEach?: ForEachPayload;
   whileCondition?: WhileConditionPayload;
   selectTargetElements?: SelectTargetElementsPayload;
+  waitForCondition?: WaitForConditionPayload;
+  selectWorkspaceTarget?: SelectWorkspaceTargetPayload;
+  forEachDiagramInWorkspace?: ForEachDiagramInWorkspacePayload;
   /** Pre-baked JSONB blob — merged underneath the camelCase fields. */
   stepMetadata?: Record<string, unknown> | null;
 }

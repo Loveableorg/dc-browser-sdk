@@ -54,11 +54,16 @@ export const MUTATING_COMPLETION_EVENTS: ReadonlySet<string> = new Set([
   "diagram_ref_added",
   "project_root_set",
   "ide_saved",
+  // Workspace-construct: select_workspace_target with allowCreate:true
+  // and the workspace_created branch of for_each_diagram_in_workspace can
+  // mutate workspace membership/state.
+  "workspace_target_selected",
+  "workspace_iteration_completed",
   // NOTE: read-only step completion events that should NEVER appear here:
   //   text_modal_dismissed, variable_captured, variable_set,
   //   targets_selected, script_completed (script body is inspected
   //   separately via scriptUsesDcSdk), source_annotation_dismissed,
-  //   element_annotation_dismissed, scope_navigated.
+  //   element_annotation_dismissed, scope_navigated, condition_met.
 ]);
 
 /**
@@ -336,9 +341,30 @@ export function stepMutatesDiagram(step: Record<string, unknown>): boolean {
     }
   }
 
+  // `wait_for_condition` is read-only when its predicate is read-only.
+  // Allow-list of write methods is already enforced via scriptUsesDcSdk;
+  // we run the same inspector over the predicate source here.
+  if (type === "wait_for_condition") {
+    const wfc = pick(step, "waitForCondition", "wait_for_condition");
+    const src = wfc && typeof wfc === "object"
+      ? (wfc as Record<string, unknown>)["predicate"]
+      : undefined;
+    if (typeof src === "string" && scriptUsesDcSdk(src)) return true;
+  }
+
+  // `select_workspace_target` with allowCreate:true mutates (creates a
+  // workspace). Without allowCreate it's read-only (selection only).
+  if (type === "select_workspace_target") {
+    const swt = pick(step, "selectWorkspaceTarget", "select_workspace_target");
+    if (swt && typeof swt === "object" && (swt as Record<string, unknown>)["allowCreate"] === true) {
+      return true;
+    }
+  }
+
   const containers = [
     pick(step, "forEach", "for_each"),
     pick(step, "whileCondition", "while_condition"),
+    pick(step, "forEachDiagramInWorkspace", "for_each_diagram_in_workspace"),
   ];
   for (const c of containers) {
     if (c && typeof c === "object") {
