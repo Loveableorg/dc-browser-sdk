@@ -72,12 +72,11 @@ export function buildStepRow(
   const delayMs = pick<number>(step, "delay_ms", "delayMs") ?? 0;
 
   // SDK binding for script-typed steps. 'dc' = DiagramCraftClient (default,
-  // back-compat); 'sc' = SpaceCraftClient (workspace constructs). Only
-  // emitted when the caller explicitly sets it — relies on DB DEFAULT 'dc'
-  // otherwise so every existing diagram-bound construct keeps prior
-  // behaviour. Column only exists on workspace_construct_steps +
-  // private_construct_steps; callers writing to custom_tutorial_steps
-  // (instance lane) MUST run rows through `stripClientKind`.
+  // back-compat); 'sc' = SpaceCraftClient (workspace constructs). Always
+  // emitted for private/workspace construct rows. This avoids mixed bulk
+  // inserts where one step has client_kind and sibling rows are sent as NULL.
+  // Callers writing to custom_tutorial_steps (instance lane, no column) MUST
+  // run rows through `stripClientKind`.
   const clientKindRaw = pick<string>(step, "client_kind", "clientKind");
   const clientKind: "dc" | "sc" | undefined =
     clientKindRaw === "sc" ? "sc" : clientKindRaw === "dc" ? "dc" : undefined;
@@ -130,7 +129,7 @@ export function buildStepRow(
     delay_ms: delayMs,
     step_metadata: Object.keys(metadata).length > 0 ? metadata : null,
   };
-  if (clientKind !== undefined) row.client_kind = clientKind;
+  row.client_kind = clientKind ?? "dc";
   return row;
 }
 
