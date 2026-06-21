@@ -54,16 +54,14 @@ export const MUTATING_COMPLETION_EVENTS: ReadonlySet<string> = new Set([
   "diagram_ref_added",
   "project_root_set",
   "ide_saved",
-  // Workspace-construct: select_workspace_target with allowCreate:true
-  // and the workspace_created branch of for_each_diagram_in_workspace can
-  // mutate workspace membership/state.
-  "workspace_target_selected",
-  "workspace_iteration_completed",
+  // NOTE: workspace_target_selected and workspace_iteration_completed are
+  // NOT listed here — they're gated per-step (allowCreate / body inspection).
   // NOTE: read-only step completion events that should NEVER appear here:
   //   text_modal_dismissed, variable_captured, variable_set,
   //   targets_selected, script_completed (script body is inspected
   //   separately via scriptUsesDcSdk), source_annotation_dismissed,
-  //   element_annotation_dismissed, scope_navigated, condition_met.
+  //   element_annotation_dismissed, scope_navigated, condition_met,
+  //   workspace_target_selected, workspace_iteration_completed.
 ]);
 
 /**
@@ -248,6 +246,20 @@ export function scriptUsesDcSdk(source: string): boolean {
   let mutatingFound = false;
   let safeFound = false;
 
+  // Collect nodes that appear as `.object` of any MemberExpression so we
+  // can exclude `it.sc` / `it.dc` from being flagged as bare references
+  // when they're really just the receiver of a method call chain.
+  const objectChildren = new Set<Node>();
+  walk(ast, (node) => {
+    if (node.type === "MemberExpression" && node.object) {
+      objectChildren.add(node.object);
+    }
+    if (node.type === "CallExpression" && node.callee) {
+      // `it.sc` is fine as a callee.object — already captured above.
+      // Nothing extra needed.
+    }
+  });
+
   walk(ast, (node) => {
     if (node.type !== "MemberExpression") return;
 
@@ -279,9 +291,13 @@ export function scriptUsesDcSdk(source: string): boolean {
   });
 
   // Bare `it.dc` / `it.sc` references (no property access) — could be
-  // passed elsewhere and used to mutate. Treat as conservative.
+  // passed elsewhere and used to mutate. Skip cases where the node is the
+  // object of an outer MemberExpression (those are method chains and were
+  // already inspected above).
   walk(ast, (node) => {
-    if (isItDc(node) || isItSc(node)) mutatingFound = true;
+    if (!(isItDc(node) || isItSc(node))) return;
+    if (objectChildren.has(node)) return;
+    mutatingFound = true;
   });
 
   if (mutatingFound) return true;
