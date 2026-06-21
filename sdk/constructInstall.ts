@@ -168,3 +168,37 @@ export async function installConstruct(
     rootElementIds: tree.rootIds ?? [],
   };
 }
+
+/** Fetch a construct row from the appropriate catalog table and install
+ *  it. Thin convenience for MCP `install_construct` + replayable bootstrap
+ *  callers so they don't have to know which table holds which lane. */
+export type CatalogLane = "private" | "workspace" | "instance";
+
+function tableForLane(lane: CatalogLane): string {
+  switch (lane) {
+    case "private":   return "private_constructs";
+    case "workspace": return "workspace_constructs";
+    case "instance":  return "custom_tutorials";
+  }
+}
+
+export async function installConstructFromCatalog(
+  sb: SupabaseClient,
+  args: { lane: CatalogLane; constructId: string; opts: InstallOpts },
+): Promise<InstallResult> {
+  const table = tableForLane(args.lane);
+  const { data, error } = await sb
+    .from(table)
+    .select("id, target_kind, base_diagram, import_seed")
+    .eq("id", args.constructId)
+    .maybeSingle();
+  if (error) throw new ValidationError(error.message);
+  if (!data) throw new ValidationError(`Construct not found in ${table}: ${args.constructId}`);
+  const row: InstallableConstruct = {
+    id: data.id,
+    target_kind: (data.target_kind ?? "diagram") as "diagram" | "workspace",
+    base_diagram: data.base_diagram,
+    import_seed: data.import_seed ?? null,
+  };
+  return await installConstruct(sb, row, args.opts);
+}
