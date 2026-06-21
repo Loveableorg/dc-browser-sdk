@@ -67,6 +67,17 @@ export function buildStepRow(
   const modalContent = pick<Record<string, unknown>>(step, "modal_content", "modalContent") ?? null;
   const delayMs = pick<number>(step, "delay_ms", "delayMs") ?? 0;
 
+  // SDK binding for script-typed steps. 'dc' = DiagramCraftClient (default,
+  // back-compat); 'sc' = SpaceCraftClient (workspace constructs). Only
+  // emitted when the caller explicitly sets it — relies on DB DEFAULT 'dc'
+  // otherwise so every existing diagram-bound construct keeps prior
+  // behaviour. Column only exists on workspace_construct_steps +
+  // private_construct_steps; callers writing to custom_tutorial_steps
+  // (instance lane) MUST run rows through `stripClientKind`.
+  const clientKindRaw = pick<string>(step, "client_kind", "clientKind");
+  const clientKind: "dc" | "sc" | undefined =
+    clientKindRaw === "sc" ? "sc" : clientKindRaw === "dc" ? "dc" : undefined;
+
   // Build step_metadata: start with any explicit step_metadata blob the
   // caller passed, then layer the camelCase advanced fields on top.
   const explicit = pick<Record<string, unknown>>(step, "step_metadata", "stepMetadata");
@@ -100,7 +111,7 @@ export function buildStepRow(
     }
   }
 
-  return {
+  const row: Record<string, unknown> = {
     tutorial_id: tutorialId,
     step_index: stepIndex,
     title,
@@ -115,6 +126,8 @@ export function buildStepRow(
     delay_ms: delayMs,
     step_metadata: Object.keys(metadata).length > 0 ? metadata : null,
   };
+  if (clientKind !== undefined) row.client_kind = clientKind;
+  return row;
 }
 
 export function buildStepRows(
@@ -123,3 +136,12 @@ export function buildStepRows(
 ): Array<Record<string, unknown>> {
   return steps.map((s, i) => buildStepRow(tutorialId, s, i));
 }
+
+/** Strip the `client_kind` field from rows headed for the instance-lane
+ *  `custom_tutorial_steps` table (which doesn't carry the column). */
+export function stripClientKind(
+  rows: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return rows.map(({ client_kind: _drop, ...rest }) => rest);
+}
+

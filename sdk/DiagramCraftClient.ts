@@ -38,7 +38,7 @@ import {
 import { ensureBase64 } from "../encoding/base64.ts";
 
 import { NotFoundError, ValidationError } from "../errors/index.ts";
-import { buildStepRows } from "../tutorial/stepInput.ts";
+import { buildStepRows, stripClientKind } from "../tutorial/stepInput.ts";
 import { tutorialMutatesDiagram } from "../tutorial/mutationHeuristic.ts";
 
 /**
@@ -408,7 +408,7 @@ export class DiagramCraftClient {
     }
     const tutorialId = (tut as { id: string }).id;
     if (steps.length > 0) {
-      const rows = buildStepRows(tutorialId, steps);
+      const rows = stripClientKind(buildStepRows(tutorialId, steps));
       const { error: sErr } = await this.sb
         .from("custom_tutorial_steps")
         .insert(rows);
@@ -496,7 +496,7 @@ export class DiagramCraftClient {
     const stepArr = steps as Array<Record<string, unknown>>;
     const hasMutations = tutorialMutatesDiagram(stepArr);
     if (stepArr.length > 0) {
-      const rows = buildStepRows(id, stepArr);
+      const rows = stripClientKind(buildStepRows(id, stepArr));
       const { error } = await this.sb
         .from("custom_tutorial_steps")
         .insert(rows);
