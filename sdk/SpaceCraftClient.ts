@@ -98,6 +98,29 @@ export class SpaceCraftClient extends DiagramCraftClient {
     });
   }
 
+  /** Return a plain DiagramCraftClient bound to `diagramId` (drops the
+   *  workspace binding). Use this when a workspace-construct script wants
+   *  to hand a strictly diagram-scoped client to a helper that expects
+   *  `it.dc`, without leaking workspace-level methods. */
+  dcFor(diagramId: string): DiagramCraftClient {
+    return new DiagramCraftClient(this.sb, {
+      ...this.spaceOpts,
+      diagramId,
+    });
+  }
+
+  /** Plain DiagramCraftClient bound to the SpaceCraftClient's current
+   *  `diagramId` (if any). Throws if no diagram is currently bound — use
+   *  `dcFor(id)` to bind one explicitly. */
+  get dc(): DiagramCraftClient {
+    if (!this.spaceOpts.diagramId) {
+      throw new ValidationError(
+        "No diagram currently bound — call sc.dcFor(diagramId) or sc.withDiagram(id).dc",
+      );
+    }
+    return this.dcFor(this.spaceOpts.diagramId);
+  }
+
   // ─── Reads (READ-ONLY — keep in sync with SC_SDK_READONLY_METHODS) ─
 
   /** READ-ONLY. List diagrams in the workspace. */
