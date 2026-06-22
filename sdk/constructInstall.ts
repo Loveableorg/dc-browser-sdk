@@ -265,7 +265,43 @@ export async function installConstructFromCatalog(
     base_diagram: data.base_diagram,
     import_seed: data.import_seed ?? null,
   };
-  const result = await installConstruct(sb, row, args.opts);
+
+  // Probe step count up front so we can decide whether to defer seeding.
+  // Workspace-target, non-replayable constructs that ship BOTH a seed AND
+  // tutorial steps get their seed staged on the new tutorial_sessions row
+  // (`pending_seed`) and materialized by TutorialProvider after intro
+  // captures complete — mirrors the diagram-archetype pendingBaseDiagram
+  // flow. Replayables keep eager seeding (the badge owns playback later).
+  let stepCount = 0;
+  if (
+    row.target_kind === "workspace" &&
+    "workspaceId" in args.opts &&
+    args.opts.createdBy &&
+    !data.replayable
+  ) {
+    const stepsTable = args.lane === "private"
+      ? "private_construct_steps"
+      : "workspace_construct_steps";
+    const { count } = await sb
+      .from(stepsTable)
+      .select("id", { count: "exact", head: true })
+      .eq("construct_id", data.id);
+    stepCount = count ?? 0;
+  }
+
+  const shouldDeferSeed =
+    row.target_kind === "workspace" &&
+    !data.replayable &&
+    !!row.import_seed &&
+    stepCount > 0 &&
+    "workspaceId" in args.opts &&
+    !!args.opts.createdBy;
+
+  // Seed now unless deferring. When deferred, the materialization happens
+  // in TutorialProvider once the user finishes the intro capture steps.
+  const result: InstallResult = shouldDeferSeed
+    ? { diagramIds: [], variablesUpserted: 0 }
+    : await installConstruct(sb, row, args.opts);
 
   // Post-install hooks for workspace-target constructs. Splits by replayable:
   //
@@ -276,7 +312,10 @@ export async function installConstructFromCatalog(
   //
   //   replayable=false → spawn a one-shot floating `tutorial_sessions` row so
   //                      the steps play immediately via the user-wide
-  //                      Realtime subscription in TutorialProvider.
+  //                      Realtime subscription in TutorialProvider. When the
+  //                      construct has a seed + steps, the seed rides along
+  //                      on `pending_seed` and is materialized on phase
+  //                      transition (intro → guided_project).
   if (
     row.target_kind === "workspace" &&
     "workspaceId" in args.opts &&
@@ -323,20 +362,13 @@ export async function installConstructFromCatalog(
         throw new ValidationError(`replayable_installs insert: ${insErr.message}`);
       }
     } else {
-      const stepsTable = args.lane === "private"
-        ? "private_construct_steps"
-        : "workspace_construct_steps";
-      const { count: stepCount } = await sb
-        .from(stepsTable)
-        .select("id", { count: "exact", head: true })
-        .eq("construct_id", data.id);
-      if ((stepCount ?? 0) > 0) {
+      if (stepCount > 0) {
         await sb.from("tutorial_sessions").insert({
           user_id: args.opts.createdBy,
           diagram_id: null,
           workspace_id: args.opts.workspaceId,
           topic_id: data.topic_id,
-          total_steps: stepCount ?? 0,
+          total_steps: stepCount,
           current_step: 0,
           phase: "intro",
           is_completed: false,
@@ -346,6 +378,7 @@ export async function installConstructFromCatalog(
           source_lane: args.lane,
           source_construct_id: data.id,
           variable_values: {},
+          pending_seed: shouldDeferSeed ? (row.import_seed as never) : null,
         });
       }
     }
