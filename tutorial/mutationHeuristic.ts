@@ -379,6 +379,15 @@ export function stepMutatesDiagram(step: Record<string, unknown>): boolean {
     }
   }
 
+  // `add_archetype` always scaffolds elements + spawns a session.
+  // `trigger_construct` either installs (mutating) or launches a
+  // pre-installed replayable (still spawns rows). Both are mutating.
+  if (type === "add_archetype" || type === "trigger_construct") {
+    return true;
+  }
+
+
+
   const containers = [
     pick(step, "forEach", "for_each"),
     pick(step, "whileCondition", "while_condition"),

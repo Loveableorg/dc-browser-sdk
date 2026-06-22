@@ -49,7 +49,17 @@ export type TutorialStepType =
   /** Symmetric to `open_diagram` — navigates back to a workspace view
    *  (overview / constructs / activity / variables). Non-mutating. See
    *  `ReturnToWorkspacePayload`. */
-  | "return_to_workspace";
+  | "return_to_workspace"
+  /** Add a tutorial archetype to a diagram (calls `addArchetypeCore`).
+   *  Spawns a `tutorial_sessions` row that lands in the queue. Optionally
+   *  promotes the new session to head via `switchToNow`. Mutating. See
+   *  `AddArchetypeStepPayload`. */
+  | "add_archetype"
+  /** Trigger a workspace construct or replayable install. Either references
+   *  an existing `replayable_installs` row by `installId`, or installs a
+   *  fresh workspace-target construct from a catalog lane. Optional
+   *  `switchToNow`. See `TriggerConstructStepPayload`. */
+  | "trigger_construct";
 
 
 export type TutorialPhase = "intro" | "guided_project";
@@ -144,6 +154,50 @@ export interface OpenDiagramPayload {
   mode?: "same_tab" | "new_tab";
   requireUserClick?: boolean;
 }
+
+
+/** Payload for `add_archetype` — installs a tutorial archetype's
+ *  base_diagram subtree onto a diagram and spawns a `tutorial_sessions`
+ *  row. Identify the archetype by topic_id (preferred — stable across
+ *  republish) or by uuid. `diagramRef` defaults to the active diagram.
+ *  `parentElementRef` defaults to root. `switchToNow` promotes the new
+ *  session to head (subject to `canSwitchAway` — when an `async` script
+ *  is awaiting ack, the switch is deferred until the user clicks ack).
+ *  `autoStart` is informational — the underlying `addArchetypeCore`
+ *  always inserts a session row; setting it false reserves it for a
+ *  future "install-only" mode. */
+export interface AddArchetypeStepPayload {
+  archetypeTopicId?: string;
+  archetypeId?: string;
+  diagramRef?: string | { id: string };
+  parentElementRef?: string | { id: string } | null;
+  variableValues?: Record<string, unknown>;
+  lane?: "private" | "workspace" | "instance";
+  autoStart?: boolean;
+  switchToNow?: boolean;
+  /** Capture the spawned session id into this session-variable name. */
+  captureSessionIdAs?: string;
+}
+
+
+/** Payload for `trigger_construct` — fires off an installed workspace
+ *  replayable (`installId`) OR installs a workspace-target construct
+ *  fresh from a catalog lane and lets the post-install hook spawn a
+ *  session (`lane` + `constructId` + `workspaceId`). `diagramRef` and
+ *  `parentElementRef` are only honored when the construct targets a
+ *  diagram (rare for this step; archetypes belong to `add_archetype`).
+ *  `switchToNow` follows the same `canSwitchAway` gating rules. */
+export interface TriggerConstructStepPayload {
+  installId?: string;
+  lane?: "private" | "workspace" | "instance";
+  constructId?: string;
+  workspaceId?: string;
+  diagramRef?: string | { id: string };
+  parentElementRef?: string | { id: string } | null;
+  switchToNow?: boolean;
+  captureSessionIdAs?: string;
+}
+
 
 /** Payload for `return_to_workspace` — navigation step symmetric to
  *  `open_diagram`. When `workspaceRef` is omitted, falls back to the
@@ -247,6 +301,8 @@ export interface TutorialStep {
   forEachDiagramInWorkspace?: ForEachDiagramInWorkspacePayload;
   openDiagram?: OpenDiagramPayload;
   returnToWorkspace?: ReturnToWorkspacePayload;
+  addArchetype?: AddArchetypeStepPayload;
+  triggerConstruct?: TriggerConstructStepPayload;
 
   /** Pre-baked JSONB blob — merged underneath the camelCase fields. */
   stepMetadata?: Record<string, unknown> | null;

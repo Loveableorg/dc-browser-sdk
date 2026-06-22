@@ -40,6 +40,8 @@ const KNOWN_STEP_TYPES = new Set<string>([
   "for_each_diagram_in_workspace",
   "open_diagram",
   "return_to_workspace",
+  "add_archetype",
+  "trigger_construct",
 ]);
 
 // Completion events known to the runtime (TutorialProvider + mutation
@@ -70,6 +72,8 @@ const KNOWN_COMPLETION_EVENTS = new Set<string>([
   "element_relocated",
   "connections_imported",
   "scope_navigated",
+  "archetype_added",
+  "construct_triggered",
 ]);
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {
@@ -298,6 +302,35 @@ export function validateTutorialStep(
       const steps = pick<unknown[]>(fe, "steps", "bodySteps", "body_steps");
       if (!isArray(steps) || steps.length === 0) {
         push(errors, "forEachDiagramInWorkspace.steps", "for_each_diagram_in_workspace requires non-empty steps.");
+      }
+      break;
+    }
+    case "add_archetype": {
+      const ap = pick<Record<string, unknown>>(step, "addArchetype", "add_archetype");
+      if (!isObject(ap)) {
+        push(errors, "addArchetype", "add_archetype step requires an `addArchetype` payload.");
+        break;
+      }
+      if (
+        !isNonEmptyString(pick<string>(ap, "archetypeTopicId", "archetype_topic_id")) &&
+        !isNonEmptyString(pick<string>(ap, "archetypeId", "archetype_id"))
+      ) {
+        push(errors, "addArchetype.archetypeTopicId", "add_archetype requires addArchetype.archetypeTopicId or addArchetype.archetypeId.");
+      }
+      break;
+    }
+    case "trigger_construct": {
+      const tc = pick<Record<string, unknown>>(step, "triggerConstruct", "trigger_construct");
+      if (!isObject(tc)) {
+        push(errors, "triggerConstruct", "trigger_construct step requires a `triggerConstruct` payload.");
+        break;
+      }
+      const hasInstall = isNonEmptyString(pick<string>(tc, "installId", "install_id"));
+      const lane = pick<string>(tc, "lane");
+      const constructId = pick<string>(tc, "constructId", "construct_id");
+      const wsId = pick<string>(tc, "workspaceId", "workspace_id");
+      if (!hasInstall && !(isNonEmptyString(lane) && isNonEmptyString(constructId) && isNonEmptyString(wsId))) {
+        push(errors, "triggerConstruct", "trigger_construct requires either installId, or (lane + constructId + workspaceId).");
       }
       break;
     }

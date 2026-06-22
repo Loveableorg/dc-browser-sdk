@@ -49,6 +49,9 @@ const METADATA_KEYS = [
   "forEachDiagramInWorkspace",
   "openDiagram",
   "returnToWorkspace",
+  // Construct queue / archetype primitives (see _shared/lib/domain/tutorial.ts).
+  "addArchetype",
+  "triggerConstruct",
 ] as const;
 
 
