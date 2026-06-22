@@ -123,3 +123,118 @@ export function findLaunchPoint(seed: ImportWorkspace): LaunchPointAnchor | null
   // Sub-workspace anchor — forward-compat; data model does not nest yet.
   return { kind: "workspace" };
 }
+
+// ─── Author-time seed validation ────────────────────────────────
+// Surface launch-point / shape problems at construct-create / import
+// time instead of waiting for an end user to click Install. Called
+// from MCP create_construct, set_construct_seed, and ImportTutorial.
+
+export type SeedValidationIssue = { level: "error" | "warning"; message: string };
+
+/** Validate a construct's import_seed against the finalized replayable
+ *  model (TutorialImportSpec §15). Returns a flat list of issues —
+ *  callers should fail on `level==="error"` entries and surface
+ *  `level==="warning"` entries non-fatally.
+ *
+ *  Rules:
+ *   - Seed absent → OK (seed is optional for all workspace constructs;
+ *     diagram-target constructs use base_diagram).
+ *   - target_kind "diagram"  → if seed present, must be kind "diagram".
+ *   - target_kind "workspace" → if seed present, must be kind "workspace".
+ *   - Workspace seed: at most one isLaunchPoint:true across
+ *     diagrams[] + workspaces[].
+ *   - Workspace seed: a launch-point diagram must be an "empty shell"
+ *     (no elements, no connections).
+ *   - Sub-workspace isLaunchPoint:true → warning (not yet honored at
+ *     runtime; sub-workspaces unshipped).
+ *   - replayable===false + any isLaunchPoint marker → warning (no Play
+ *     badge will be created; flag is ignored).
+ */
+export function validateConstructSeed(
+  seed: ImportDiagramElement | null | undefined,
+  opts: { replayable: boolean; targetKind: "diagram" | "workspace" },
+): SeedValidationIssue[] {
+  const issues: SeedValidationIssue[] = [];
+  if (!seed) return issues;
+
+  if (opts.targetKind === "diagram") {
+    if (seed.kind !== "diagram") {
+      issues.push({
+        level: "error",
+        message: `target_kind="diagram" requires import_seed.kind="diagram" (got "${seed.kind}").`,
+      });
+    }
+    if (seed.kind === "diagram" && (seed as ImportDiagram).isLaunchPoint) {
+      issues.push({
+        level: "error",
+        message:
+          'isLaunchPoint is only valid inside a workspace seed; diagram-target constructs have no launch badge.',
+      });
+    }
+    return issues;
+  }
+
+  // target_kind === "workspace"
+  if (seed.kind !== "workspace") {
+    issues.push({
+      level: "error",
+      message: `target_kind="workspace" requires import_seed.kind="workspace" (got "${seed.kind}").`,
+    });
+    return issues;
+  }
+
+  const ws = seed as ImportWorkspace;
+  const launchDiagrams = (ws.diagrams ?? []).filter((d) => d.isLaunchPoint);
+  const launchSubWs = (ws.workspaces ?? []).filter((w) => w.isLaunchPoint);
+  const totalAnchors = launchDiagrams.length + launchSubWs.length;
+
+  if (totalAnchors > 1) {
+    issues.push({
+      level: "error",
+      message: `Workspace seed declares ${totalAnchors} isLaunchPoint anchors; at most one is allowed.`,
+    });
+  }
+
+  for (const d of launchDiagrams) {
+    if (!diagramIsLaunchPointShapeValid(d)) {
+      issues.push({
+        level: "error",
+        message: `Launch-point diagram "${d.title}" must be an empty shell (no elements or connections) — move its content into a sibling diagram.`,
+      });
+    }
+  }
+
+  if (launchSubWs.length > 0) {
+    issues.push({
+      level: "warning",
+      message:
+        "Sub-workspace isLaunchPoint markers are accepted but not yet honored at runtime (sub-workspaces are not shipped). The Play badge will fall back to the destination workspace card.",
+    });
+  }
+
+  if (!opts.replayable && totalAnchors > 0) {
+    issues.push({
+      level: "warning",
+      message:
+        "isLaunchPoint markers are ignored on non-replayable constructs (no Play badge is created). Drop them or set replayable=true.",
+    });
+  }
+
+  return issues;
+}
+
+/** Convenience: throw if validateConstructSeed produced any errors.
+ *  Returns the (possibly empty) warning list. */
+export function assertConstructSeedValid(
+  seed: ImportDiagramElement | null | undefined,
+  opts: { replayable: boolean; targetKind: "diagram" | "workspace" },
+): SeedValidationIssue[] {
+  const issues = validateConstructSeed(seed, opts);
+  const errors = issues.filter((i) => i.level === "error");
+  if (errors.length > 0) {
+    throw new Error(
+      `Construct seed validation failed:\n  - ${errors.map((e) => e.message).join("\n  - ")}`,
+    );
+  }
+  return issues.filter((i) => i.level === "warning");
+}
