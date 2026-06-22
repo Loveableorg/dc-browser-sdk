@@ -248,6 +248,74 @@ export class DiagramCraftClient {
     return await deleteElementSubtree(this.sb, id, rootElementId);
   }
 
+  /**
+   * Patch arbitrary scalar fields on an element WITHOUT touching its
+   * children, source_code, connections, or variables. Useful for the
+   * common "just rename / update description / move / recolor" case
+   * where re-sending the full ImportElement payload to upsertElement
+   * would clobber source_code and children.
+   *
+   * All keys are optional; pass only the columns you want to change.
+   * `name` is validated to not contain "/" (path separator). Returns
+   * the element id + the columns that were actually written.
+   */
+  async updateElementFields(
+    path: string,
+    fields: {
+      name?: string;
+      description?: string | null;
+      background_color?: string | null;
+      image_url?: string | null;
+      show_image?: boolean;
+      position_x?: number;
+      position_y?: number;
+      width?: number;
+      height?: number;
+      is_expanded?: boolean;
+      sort_order?: number;
+      is_project_root?: boolean;
+      git_repo_url?: string | null;
+      referenced_diagram_id?: string | null;
+    },
+    diagramId?: string,
+  ): Promise<{ id: string; updated: Record<string, unknown> }> {
+    const id = this.requireDiagramId(diagramId);
+    const { id: elementId } = await resolveElementByPath(this.sb, id, path);
+    const ALLOWED = [
+      "name", "description", "background_color", "image_url", "show_image",
+      "position_x", "position_y", "width", "height", "is_expanded",
+      "sort_order", "is_project_root", "git_repo_url", "referenced_diagram_id",
+    ] as const;
+    const updates: Record<string, unknown> = {};
+    for (const k of ALLOWED) {
+      if (Object.prototype.hasOwnProperty.call(fields, k)) {
+        updates[k] = (fields as Record<string, unknown>)[k];
+      }
+    }
+    if (typeof updates.name === "string" && (updates.name as string).includes("/")) {
+      throw new ValidationError(
+        'Element name must not contain "/" (path separator). Use "-", "·", " — ", or " of " instead.',
+      );
+    }
+    if (Object.keys(updates).length === 0) {
+      return { id: elementId, updated: {} };
+    }
+    const { error } = await this.sb
+      .from("diagram_elements")
+      .update(updates)
+      .eq("id", elementId);
+    if (error) {
+      throw new Error(`updateElementFields failed: ${error.message}`);
+    }
+    await this.sb
+      .from("diagrams")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", id);
+    return { id: elementId, updated: updates };
+  }
+
+
+
 
 
   /** Add connections between siblings already in the diagram (by name). */
