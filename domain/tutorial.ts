@@ -41,7 +41,16 @@ export type TutorialStepType =
   /** Iterator sugar: resolves a workspace ref, then iterates every diagram
    *  in it, exposing each as `it.<asVar> = { id, title }` to `bodySteps`.
    *  See `ForEachDiagramInWorkspacePayload`. */
-  | "for_each_diagram_in_workspace";
+  | "for_each_diagram_in_workspace"
+  /** Navigates the current tab (or opens a new tab) to a diagram identified
+   *  by a UUID, a session-variable name, or `{ id }`. Non-mutating. See
+   *  `OpenDiagramPayload`. */
+  | "open_diagram"
+  /** Symmetric to `open_diagram` — navigates back to a workspace view
+   *  (overview / constructs / activity / variables). Non-mutating. See
+   *  `ReturnToWorkspacePayload`. */
+  | "return_to_workspace";
+
 
 export type TutorialPhase = "intro" | "guided_project";
 
@@ -126,6 +135,25 @@ export interface SelectWorkspaceTargetPayload {
   intro?: string;
   buttonLabel?: string;
 }
+
+/** Payload for `open_diagram` — navigation step. Non-mutating; allowed in
+ *  read-only replayable archetypes. `diagramRef` accepts a UUID string,
+ *  a session-variable name (resolved against `it.*`), or `{ id }`. */
+export interface OpenDiagramPayload {
+  diagramRef: string | { id: string; title?: string };
+  mode?: "same_tab" | "new_tab";
+  requireUserClick?: boolean;
+}
+
+/** Payload for `return_to_workspace` — navigation step symmetric to
+ *  `open_diagram`. When `workspaceRef` is omitted, falls back to the
+ *  workspace bound to `it.sc` (or the current diagram's workspace_id). */
+export interface ReturnToWorkspacePayload {
+  workspaceRef?: string | { id: string };
+  view?: "overview" | "diagrams" | "constructs" | "activity" | "variables";
+  requireUserClick?: boolean;
+}
+
 
 /** Payload for `for_each_diagram_in_workspace`. Resolves `workspaceRef`
  *  (variable name, workspace id, or `{ id }` object) and iterates every
@@ -217,6 +245,9 @@ export interface TutorialStep {
   waitForCondition?: WaitForConditionPayload;
   selectWorkspaceTarget?: SelectWorkspaceTargetPayload;
   forEachDiagramInWorkspace?: ForEachDiagramInWorkspacePayload;
+  openDiagram?: OpenDiagramPayload;
+  returnToWorkspace?: ReturnToWorkspacePayload;
+
   /** Pre-baked JSONB blob — merged underneath the camelCase fields. */
   stepMetadata?: Record<string, unknown> | null;
 }

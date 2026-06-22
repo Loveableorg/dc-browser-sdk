@@ -47,7 +47,10 @@ const METADATA_KEYS = [
   "waitForCondition",
   "selectWorkspaceTarget",
   "forEachDiagramInWorkspace",
+  "openDiagram",
+  "returnToWorkspace",
 ] as const;
+
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {
   for (const k of keys) if (o[k] !== undefined && o[k] !== null) return o[k] as T;

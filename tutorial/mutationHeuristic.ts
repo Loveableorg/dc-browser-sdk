@@ -61,7 +61,9 @@ export const MUTATING_COMPLETION_EVENTS: ReadonlySet<string> = new Set([
   //   targets_selected, script_completed (script body is inspected
   //   separately via scriptUsesDcSdk), source_annotation_dismissed,
   //   element_annotation_dismissed, scope_navigated, condition_met,
-  //   workspace_target_selected, workspace_iteration_completed.
+  //   workspace_target_selected, workspace_iteration_completed,
+  //   diagram_opened, workspace_view_opened (pure navigation).
+
 ]);
 
 /**
