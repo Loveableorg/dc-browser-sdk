@@ -200,7 +200,19 @@ export class SpaceCraftClient extends DiagramCraftClient {
       description: payload.description ?? "",
       workspace_id: workspaceId,
     };
-    if (opts.createdBy) insertRow.user_id = opts.createdBy;
+    let createdBy = opts.createdBy;
+    if (!createdBy) {
+      // Browser callers (e.g. it.sc.createWorkspaceDiagram from a workspace
+      // run_script) authenticate via the user's JWT; the diagrams INSERT
+      // RLS policy requires user_id = auth.uid(), so default to the
+      // session user when no explicit createdBy is provided.
+      try {
+        const auth = (this.sb as unknown as { auth?: { getUser?: () => Promise<{ data: { user: { id: string } | null } }> } }).auth;
+        const got = await auth?.getUser?.();
+        createdBy = got?.data?.user?.id ?? undefined;
+      } catch { /* ignore — server contexts use service role */ }
+    }
+    if (createdBy) insertRow.user_id = createdBy;
     const { data: row, error } = await this.sb
       .from("diagrams")
       .insert(insertRow)
