@@ -132,9 +132,15 @@ export async function installConstruct(
         "workspace-target construct requires InstallToWorkspaceOpts (workspaceId)",
       );
     }
-    if (!row.import_seed || !isImportWorkspaceSeed(row.import_seed)) {
+    // Seed is OPTIONAL for non-replayable workspace constructs (starters and
+    // archetypes) — they may exist purely to drive step playback. The DB
+    // trigger still enforces "replayable=true requires a workspace seed".
+    if (!row.import_seed) {
+      return { diagramIds: [], variablesUpserted: 0 };
+    }
+    if (!isImportWorkspaceSeed(row.import_seed)) {
       throw new ValidationError(
-        "workspace-target construct must have import_seed of kind:'workspace'",
+        "workspace-target construct seed must be kind:'workspace'",
       );
     }
     const sc = new SpaceCraftClient(sb, { workspaceId: opts.workspaceId });
@@ -168,6 +174,7 @@ export async function installConstruct(
     rootElementIds: tree.rootIds ?? [],
   };
 }
+
 
 /** Fetch a construct row from the appropriate catalog table and install
  *  it. Thin convenience for MCP `install_construct` + replayable bootstrap
@@ -245,7 +252,7 @@ export async function installConstructFromCatalog(
 
   const { data, error } = await sb
     .from(table)
-    .select("id, target_kind, base_diagram, import_seed")
+    .select("id, kind, topic_id, label, replayable, target_kind, base_diagram, import_seed")
     .eq("id", args.constructId)
     .maybeSingle();
   if (error) throw new ValidationError(error.message);
@@ -256,5 +263,45 @@ export async function installConstructFromCatalog(
     base_diagram: data.base_diagram,
     import_seed: data.import_seed ?? null,
   };
-  return await installConstruct(sb, row, args.opts);
+  const result = await installConstruct(sb, row, args.opts);
+
+  // For workspace-target installs (non-replayable), also spawn a floating
+  // tutorial_sessions row so the construct's steps play for the user via
+  // the user-wide Realtime subscription in TutorialProvider. Seed import
+  // is independent — steps run whether or not a seed was present.
+  if (
+    row.target_kind === "workspace" &&
+    !data.replayable &&
+    "workspaceId" in args.opts &&
+    args.opts.createdBy
+  ) {
+    const stepsTable = args.lane === "private"
+      ? "private_construct_steps"
+      : "workspace_construct_steps";
+    const { count: stepCount } = await sb
+      .from(stepsTable)
+      .select("id", { count: "exact", head: true })
+      .eq("construct_id", data.id);
+    if ((stepCount ?? 0) > 0) {
+      await sb.from("tutorial_sessions").insert({
+        user_id: args.opts.createdBy,
+        diagram_id: null,
+        workspace_id: args.opts.workspaceId,
+        topic_id: data.topic_id,
+        total_steps: stepCount ?? 0,
+        current_step: 0,
+        phase: "intro",
+        is_completed: false,
+        is_replayable: false,
+        archetype_label: data.label,
+        scope_element_id: null,
+        source_lane: args.lane,
+        source_construct_id: data.id,
+        variable_values: {},
+      });
+    }
+  }
+
+  return result;
 }
+
