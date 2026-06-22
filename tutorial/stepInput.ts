@@ -83,7 +83,15 @@ export function buildStepRow(
   // inserts where one step has client_kind and sibling rows are sent as NULL.
   // Callers writing to custom_tutorial_steps (instance lane, no column) MUST
   // run rows through `stripClientKind`.
-  const clientKindRaw = pick<string>(step, "client_kind", "clientKind");
+  // Accept clientKind at the step top level (per TutorialImportSpec) AND
+  // nested inside `runScript` / `config` — a common authoring mistake since
+  // every other run-script setting (script, timeoutMs, requireAck, …)
+  // lives inside that nested block. Top-level always wins.
+  const nestedRun = (step as { runScript?: Record<string, unknown>; config?: Record<string, unknown> });
+  const clientKindRaw =
+    pick<string>(step, "client_kind", "clientKind") ??
+    (nestedRun.runScript && pick<string>(nestedRun.runScript, "client_kind", "clientKind")) ??
+    (nestedRun.config && pick<string>(nestedRun.config, "client_kind", "clientKind"));
   const clientKind: "dc" | "sc" | undefined =
     clientKindRaw === "sc" ? "sc" : clientKindRaw === "dc" ? "dc" : undefined;
 
