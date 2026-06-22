@@ -29,9 +29,11 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.1";
 import {
+  findLaunchPoint,
   isImportDiagramSeed,
   isImportWorkspaceSeed,
   type ImportDiagramElement,
+  type ImportWorkspace,
 } from "../domain/constructImport.ts";
 import type { ImportElement, ImportConnection, ImportVariable } from "../domain/types.ts";
 import { SpaceCraftClient } from "./SpaceCraftClient.ts";
@@ -252,7 +254,7 @@ export async function installConstructFromCatalog(
 
   const { data, error } = await sb
     .from(table)
-    .select("id, kind, topic_id, label, replayable, target_kind, base_diagram, import_seed")
+    .select("id, kind, topic_id, label, replayable, has_mutations, target_kind, base_diagram, import_seed")
     .eq("id", args.constructId)
     .maybeSingle();
   if (error) throw new ValidationError(error.message);
@@ -265,40 +267,87 @@ export async function installConstructFromCatalog(
   };
   const result = await installConstruct(sb, row, args.opts);
 
-  // For workspace-target installs (non-replayable), also spawn a floating
-  // tutorial_sessions row so the construct's steps play for the user via
-  // the user-wide Realtime subscription in TutorialProvider. Seed import
-  // is independent — steps run whether or not a seed was present.
+  // Post-install hooks for workspace-target constructs. Splits by replayable:
+  //
+  //   replayable=true  → record a persistent `replayable_installs` Play badge
+  //                      anchored to the launch-point diagram (or workspace).
+  //                      No tutorial_sessions row here — launching is the user
+  //                      clicking the badge later.
+  //
+  //   replayable=false → spawn a one-shot floating `tutorial_sessions` row so
+  //                      the steps play immediately via the user-wide
+  //                      Realtime subscription in TutorialProvider.
   if (
     row.target_kind === "workspace" &&
-    !data.replayable &&
     "workspaceId" in args.opts &&
     args.opts.createdBy
   ) {
-    const stepsTable = args.lane === "private"
-      ? "private_construct_steps"
-      : "workspace_construct_steps";
-    const { count: stepCount } = await sb
-      .from(stepsTable)
-      .select("id", { count: "exact", head: true })
-      .eq("construct_id", data.id);
-    if ((stepCount ?? 0) > 0) {
-      await sb.from("tutorial_sessions").insert({
-        user_id: args.opts.createdBy,
-        diagram_id: null,
-        workspace_id: args.opts.workspaceId,
-        topic_id: data.topic_id,
-        total_steps: stepCount ?? 0,
-        current_step: 0,
-        phase: "intro",
-        is_completed: false,
-        is_replayable: false,
-        archetype_label: data.label,
-        scope_element_id: null,
+    if (data.replayable) {
+      // Find the anchor in the seed (workspace-seed only).
+      let anchorDiagramId: string | null = null;
+      let anchorWorkspaceId: string | null = null;
+      const seed = row.import_seed;
+      if (seed && isImportWorkspaceSeed(seed)) {
+        const lp = findLaunchPoint(seed as ImportWorkspace);
+        if (lp?.kind === "diagram") {
+          // Find the diagram by title among the diagrams imported this call.
+          const wsId = args.opts.workspaceId;
+          const { data: match } = await sb
+            .from("diagrams")
+            .select("id")
+            .eq("workspace_id", wsId)
+            .eq("title", lp.title)
+            .maybeSingle();
+          if (match) anchorDiagramId = (match as { id: string }).id;
+        }
+      }
+      if (!anchorDiagramId) {
+        anchorWorkspaceId = args.opts.workspaceId;
+      }
+      const installScope = args.lane === "private" ? "user" : "workspace";
+      const { error: insErr } = await sb.from("replayable_installs").insert({
         source_lane: args.lane,
         source_construct_id: data.id,
-        variable_values: {},
+        topic_id: data.topic_id,
+        label: data.label,
+        has_mutations: (data as { has_mutations?: boolean }).has_mutations ?? false,
+        install_scope: installScope,
+        workspace_id: args.opts.workspaceId,
+        installed_by: args.opts.createdBy,
+        anchor_diagram_id: anchorDiagramId,
+        anchor_workspace_id: anchorWorkspaceId,
       });
+      // Ignore duplicate-key (re-install for an already-installed badge);
+      // surface every other error.
+      if (insErr && (insErr as { code?: string }).code !== "23505") {
+        throw new ValidationError(`replayable_installs insert: ${insErr.message}`);
+      }
+    } else {
+      const stepsTable = args.lane === "private"
+        ? "private_construct_steps"
+        : "workspace_construct_steps";
+      const { count: stepCount } = await sb
+        .from(stepsTable)
+        .select("id", { count: "exact", head: true })
+        .eq("construct_id", data.id);
+      if ((stepCount ?? 0) > 0) {
+        await sb.from("tutorial_sessions").insert({
+          user_id: args.opts.createdBy,
+          diagram_id: null,
+          workspace_id: args.opts.workspaceId,
+          topic_id: data.topic_id,
+          total_steps: stepCount ?? 0,
+          current_step: 0,
+          phase: "intro",
+          is_completed: false,
+          is_replayable: false,
+          archetype_label: data.label,
+          scope_element_id: null,
+          source_lane: args.lane,
+          source_construct_id: data.id,
+          variable_values: {},
+        });
+      }
     }
   }
 
