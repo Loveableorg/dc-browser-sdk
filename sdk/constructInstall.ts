@@ -341,7 +341,39 @@ export async function installConstructFromCatalog(
         }
       }
       if (!anchorDiagramId) {
-        anchorWorkspaceId = args.opts.workspaceId;
+        // Legacy / pre-spec fallback: replayable workspace seed with no
+        // isLaunchPoint marker. Instead of hijacking the destination
+        // workspace card (which would block folder navigation), create
+        // an empty launch-point diagram in the workspace and anchor to
+        // it. New constructs are rejected at validation time — see
+        // validateConstructSeed.
+        const launchTitle = `${data.label} — Launch`;
+        const { data: existing } = await sb
+          .from("diagrams")
+          .select("id")
+          .eq("workspace_id", args.opts.workspaceId)
+          .eq("title", launchTitle)
+          .maybeSingle();
+        if (existing) {
+          anchorDiagramId = (existing as { id: string }).id;
+        } else {
+          const { data: created, error: createErr } = await sb
+            .from("diagrams")
+            .insert({
+              title: launchTitle,
+              description: data.label,
+              workspace_id: args.opts.workspaceId,
+              owner_id: args.opts.createdBy,
+            })
+            .select("id")
+            .maybeSingle();
+          if (createErr || !created) {
+            // Last-ditch fallback to workspace anchor so install still succeeds.
+            anchorWorkspaceId = args.opts.workspaceId;
+          } else {
+            anchorDiagramId = (created as { id: string }).id;
+          }
+        }
       }
       const installScope = args.lane === "private" ? "user" : "workspace";
       const { error: insErr } = await sb.from("replayable_installs").insert({

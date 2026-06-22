@@ -212,6 +212,14 @@ export function validateConstructSeed(
     });
   }
 
+  if (opts.replayable && totalAnchors === 0) {
+    issues.push({
+      level: "error",
+      message:
+        "Replayable workspace seed must declare exactly one isLaunchPoint:true anchor (an empty-shell diagram with only title/description/variables). Without one the Play badge would hijack the destination workspace card.",
+    });
+  }
+
   if (!opts.replayable && totalAnchors > 0) {
     issues.push({
       level: "warning",
