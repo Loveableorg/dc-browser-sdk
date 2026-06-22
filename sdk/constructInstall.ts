@@ -187,6 +187,62 @@ export async function installConstructFromCatalog(
   args: { lane: CatalogLane; constructId: string; opts: InstallOpts },
 ): Promise<InstallResult> {
   const table = tableForLane(args.lane);
+
+  // `custom_tutorials` (instance lane) predates the target_kind /
+  // import_seed columns. Read only what exists there and synthesize the
+  // InstallableConstruct shape for backwards compatibility with old
+  // diagram tutorial formats: `kind='starter'` becomes a workspace-target
+  // install whose seed is derived from `base_diagram` (which may already
+  // be an ImportWorkspace, or a legacy diagram tree we wrap into a
+  // single-diagram workspace seed). Other kinds remain diagram-target
+  // and continue to scaffold from `base_diagram`.
+  if (args.lane === "instance") {
+    const { data, error } = await sb
+      .from(table)
+      .select("id, kind, label, diagram_title, description, base_diagram")
+      .eq("id", args.constructId)
+      .maybeSingle();
+    if (error) throw new ValidationError(error.message);
+    if (!data) throw new ValidationError(`Construct not found in ${table}: ${args.constructId}`);
+    const isStarter = data.kind === "starter";
+    const target_kind: "diagram" | "workspace" = isStarter ? "workspace" : "diagram";
+    let import_seed: ImportDiagramElement | null = null;
+    if (isStarter) {
+      const bd = data.base_diagram as unknown;
+      if (bd && typeof bd === "object" && (bd as { kind?: string }).kind === "workspace") {
+        import_seed = bd as ImportDiagramElement;
+      } else {
+        // Legacy diagram-shape base_diagram → wrap into a workspace seed
+        // containing a single diagram so SpaceCraftClient.importSeed runs.
+        const legacy = diagramSeedFrom({
+          id: data.id,
+          target_kind: "diagram",
+          base_diagram: bd,
+          import_seed: null,
+        });
+        import_seed = {
+          kind: "workspace",
+          name: data.label,
+          description: data.description ?? null,
+          diagrams: [{
+            title: data.diagram_title || data.label,
+            description: data.description ?? null,
+            elements: legacy.elements,
+            connections: legacy.connections,
+            variables: legacy.variables,
+          }],
+        };
+      }
+    }
+    const row: InstallableConstruct = {
+      id: data.id,
+      target_kind,
+      base_diagram: data.base_diagram,
+      import_seed,
+    };
+    return await installConstruct(sb, row, args.opts);
+  }
+
   const { data, error } = await sb
     .from(table)
     .select("id, target_kind, base_diagram, import_seed")
