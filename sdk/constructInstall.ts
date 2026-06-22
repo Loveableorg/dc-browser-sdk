@@ -363,7 +363,11 @@ export async function installConstructFromCatalog(
               title: launchTitle,
               description: data.label,
               workspace_id: args.opts.workspaceId,
-              owner_id: args.opts.createdBy,
+              // diagrams INSERT RLS requires auth.uid() = user_id; the
+              // column is `user_id`, not `owner_id` (earlier draft used
+              // the wrong column name and every legacy-fallback install
+              // hit a permission error before reaching the badge insert).
+              user_id: args.opts.createdBy,
             })
             .select("id")
             .maybeSingle();
