@@ -40,6 +40,11 @@ import { ensureBase64 } from "../encoding/base64.ts";
 import { NotFoundError, ValidationError } from "../errors/index.ts";
 import { buildStepRows, stripClientKind } from "../tutorial/stepInput.ts";
 import { tutorialMutatesDiagram } from "../tutorial/mutationHeuristic.ts";
+import {
+  addArchetypeCore,
+  type AddArchetypeCoreResult,
+  type ConstructLane,
+} from "../archetype/addArchetype.ts";
 
 /**
  * Replayable archetypes REQUIRE a base_diagram with at least one element.
@@ -509,6 +514,58 @@ export class DiagramCraftClient {
       .update({ has_mutations: hasMutations })
       .eq("id", id);
     return { id, stepCount: stepArr.length, hasMutations };
+  }
+
+  /**
+   * Scaffold an archetype's base_diagram subtree onto a diagram and
+   * spawn a `tutorial_sessions` row. Mirrors the `add_archetype_to_diagram`
+   * MCP tool and the `add_archetype` tutorial step. Resolves the
+   * archetype by uuid OR by topic_id (instance lane). Requires `userId`
+   * — pass it through, or omit to look it up via `sb.auth.getUser()`
+   * (works for browser anon clients; service-role callers MUST pass it).
+   */
+  async addArchetype(opts: {
+    archetypeId?: string;
+    archetypeTopicId?: string;
+    diagramId?: string;
+    parentElementId?: string | null;
+    variableValues?: Record<string, unknown>;
+    lane?: ConstructLane;
+    userId?: string;
+  }): Promise<AddArchetypeCoreResult> {
+    const diagramId = this.requireDiagramId(opts.diagramId);
+    let archetypeId = opts.archetypeId ?? null;
+    if (!archetypeId && opts.archetypeTopicId) {
+      const { data } = await this.sb
+        .from("custom_tutorials")
+        .select("id")
+        .eq("topic_id", opts.archetypeTopicId)
+        .eq("is_archetype", true)
+        .maybeSingle();
+      archetypeId = (data as { id?: string } | null)?.id ?? null;
+    }
+    if (!archetypeId) {
+      throw new ValidationError(
+        "addArchetype requires archetypeId or archetypeTopicId (resolved via custom_tutorials.topic_id).",
+      );
+    }
+    let userId = opts.userId ?? null;
+    if (!userId) {
+      const { data: u } = await this.sb.auth.getUser();
+      userId = u.user?.id ?? null;
+    }
+    if (!userId) {
+      throw new ValidationError("addArchetype requires userId (no authenticated session).");
+    }
+    return await addArchetypeCore({
+      sb: this.sb,
+      diagramId,
+      parentElementId: opts.parentElementId ?? null,
+      archetypeId,
+      userId,
+      variableValues: opts.variableValues,
+      lane: opts.lane ?? "instance",
+    });
   }
 }
 

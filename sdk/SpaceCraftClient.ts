@@ -28,6 +28,10 @@ import type {
 } from "../domain/constructImport.ts";
 import type { ImportVariable } from "../domain/types.ts";
 import { insertElementTree, insertConnections, insertVariables, resolveParentByPath } from "../diagram/tree.ts";
+import {
+  installConstructFromCatalog,
+  type CatalogLane,
+} from "./constructInstall.ts";
 
 export interface SpaceCraftClientOptions extends DiagramCraftClientOptions {
   /** Required for workspace-level operations; diagram-level methods still
@@ -315,5 +319,107 @@ export class SpaceCraftClient extends DiagramCraftClient {
     }
     const { id } = await this.createWorkspaceDiagram(seed, opts);
     return { diagramIds: [id], variablesUpserted: 0 };
+  }
+
+  /**
+   * Trigger a workspace construct or replayable install. Mirrors the
+   * `trigger_construct` tutorial step. Two modes:
+   *   • `installId` — launch a pre-existing `replayable_installs` row by
+   *     inserting a `tutorial_sessions` row directly (matches
+   *     `launchReplayableInstall` in the browser hook).
+   *   • `lane + constructId` (+ workspaceId) — install the construct
+   *     fresh; the shared `installConstructFromCatalog` post-install hook
+   *     spawns the session row for non-replayable workspace constructs
+   *     (replayables get a badge instead).
+   * Returns `{ sessionId }` when a session was created.
+   */
+  async triggerConstruct(opts: {
+    installId?: string;
+    lane?: CatalogLane;
+    constructId?: string;
+    workspaceId?: string;
+    userId?: string;
+  }): Promise<{ sessionId: string | null }> {
+    let userId = opts.userId ?? null;
+    if (!userId) {
+      const { data: u } = await this.sb.auth.getUser();
+      userId = u.user?.id ?? null;
+    }
+    if (!userId) {
+      throw new ValidationError("triggerConstruct requires userId (no authenticated session).");
+    }
+
+    if (opts.installId) {
+      const { data: inst, error } = await this.sb
+        .from("replayable_installs")
+        .select("*")
+        .eq("id", opts.installId)
+        .maybeSingle();
+      if (error) throw new ValidationError(error.message);
+      if (!inst) throw new NotFoundError(`replayable_install ${opts.installId} not found`);
+      const install = inst as Record<string, unknown>;
+      const stepsTable = install.source_lane === "private"
+        ? "private_construct_steps"
+        : install.source_lane === "workspace"
+        ? "workspace_construct_steps"
+        : "custom_tutorial_steps";
+      const constructFk = install.source_lane === "instance" ? "tutorial_id" : "construct_id";
+      const { count } = await this.sb
+        .from(stepsTable as "workspace_construct_steps")
+        .select("id", { count: "exact", head: true })
+        .eq(constructFk, install.source_construct_id as string);
+      const { data: row, error: insErr } = await this.sb
+        .from("tutorial_sessions")
+        .insert({
+          user_id: userId,
+          diagram_id: install.anchor_diagram_id ?? null,
+          workspace_id: install.anchor_workspace_id ?? install.workspace_id ?? null,
+          topic_id: install.topic_id,
+          total_steps: count ?? 0,
+          current_step: 0,
+          phase: "intro",
+          is_completed: false,
+          is_replayable: true,
+          archetype_label: install.label,
+          scope_element_id: null,
+          source_lane: install.source_lane,
+          source_construct_id: install.source_construct_id,
+          variable_values: {},
+        })
+        .select("id")
+        .single();
+      if (insErr || !row) {
+        throw new ValidationError(insErr?.message ?? "no session id returned");
+      }
+      return { sessionId: (row as { id: string }).id };
+    }
+
+    if (!opts.lane || !opts.constructId) {
+      throw new ValidationError(
+        "triggerConstruct requires installId, or (lane + constructId) for a fresh install.",
+      );
+    }
+    const workspaceId = this.requireWorkspaceId(opts.workspaceId);
+    await installConstructFromCatalog(this.sb, {
+      lane: opts.lane,
+      constructId: opts.constructId,
+      opts: {
+        workspaceId,
+        overwrite: false,
+        createdBy: userId,
+      },
+    });
+    // The post-install hook spawns a session row for non-replayable
+    // workspace-target constructs; surface its id when present.
+    const { data: spawned } = await this.sb
+      .from("tutorial_sessions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("source_construct_id", opts.constructId)
+      .eq("is_completed", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return { sessionId: (spawned as { id?: string } | null)?.id ?? null };
   }
 }
