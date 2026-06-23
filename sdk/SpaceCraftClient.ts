@@ -380,18 +380,25 @@ export class SpaceCraftClient extends DiagramCraftClient {
         .from(stepsTable as "workspace_construct_steps")
         .select("id", { count: "exact", head: true })
         .eq(constructFk, install.source_construct_id as string);
+      const playbackDiagramId = install.workspace_id || install.anchor_workspace_id
+        ? null
+        : install.anchor_diagram_id ?? null;
+
       const { data: row, error: insErr } = await this.sb
         .from("tutorial_sessions")
         .insert({
           user_id: userId,
-          diagram_id: install.anchor_diagram_id ?? null,
+          // Badge anchors are not playback scope. Workspace replayables need a
+          // floating session so the app-wide TutorialProvider can launch the UI
+          // from workspace/dashboard surfaces.
+          diagram_id: playbackDiagramId,
           workspace_id: install.anchor_workspace_id ?? install.workspace_id ?? null,
           topic_id: install.topic_id,
           total_steps: count ?? 0,
           current_step: 0,
           phase: "intro",
           is_completed: false,
-          is_replayable: true,
+          is_replayable: false,
           archetype_label: install.label,
           scope_element_id: null,
           source_lane: install.source_lane,
