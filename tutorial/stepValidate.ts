@@ -55,10 +55,11 @@ const KNOWN_COMPLETION_EVENTS = new Set<string>([
   "branch_resolved",
   "script_completed",
   "iteration_completed",
-  "target_selected",
+  "targets_selected",
   "annotation_dismissed",
   "condition_met",
   "workspace_target_selected",
+  "workspace_iteration_completed",
   "diagram_opened",
   "workspace_returned",
   // Element/source mutation events from MUTATING_COMPLETION_EVENTS
