@@ -420,6 +420,53 @@ export async function installConstructFromCatalog(
     }
   }
 
+  // Diagram-target replayable constructs: scaffold inserts the elements,
+  // but the Play button (rendered by ReplayableArchetypePlayButton) is
+  // driven by a `tutorial_sessions` marker row with is_replayable=true
+  // and scope_element_id pointing at the inserted subtree root. Without
+  // this row, get_replayable_archetypes_for_diagram returns nothing for
+  // the diagram and no badge appears. (The manual UI add path goes
+  // through addArchetypeCore which writes this row directly; MCP
+  // install_construct previously skipped it.)
+  if (
+    row.target_kind === "diagram" &&
+    "diagramId" in args.opts &&
+    args.opts.createdBy &&
+    data.replayable
+  ) {
+    const rootId = result.rootElementIds?.[0] ?? args.opts.parentElementId ?? null;
+    if (rootId) {
+      const stepsTable = args.lane === "private"
+        ? "private_construct_steps"
+        : "workspace_construct_steps";
+      const stepsFk = "construct_id";
+      const { count: dStepCount } = await sb
+        .from(stepsTable)
+        .select("id", { count: "exact", head: true })
+        .eq(stepsFk, data.id);
+
+      const { error: rErr } = await sb.from("tutorial_sessions").insert({
+        user_id: args.opts.createdBy,
+        diagram_id: args.opts.diagramId,
+        topic_id: data.topic_id,
+        total_steps: dStepCount ?? 0,
+        current_step: 0,
+        phase: "intro",
+        is_completed: true,
+        is_replayable: true,
+        archetype_label: data.label,
+        scope_element_id: rootId,
+        source_lane: args.lane,
+        source_construct_id: data.id,
+        variable_values: { __archetypeScopeElementId: rootId },
+      });
+      if (rErr && (rErr as { code?: string }).code !== "23505") {
+        console.warn("[constructInstall] replayable marker insert:", rErr.message);
+      }
+    }
+  }
+
   return result;
 }
+
 
