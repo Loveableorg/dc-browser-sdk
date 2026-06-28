@@ -48,10 +48,15 @@ export interface ImportElement {
   file_name?: string | null;
   is_project_root?: boolean;
   git_repo_url?: string | null;
-  /** Browser-only extras tolerated by the schema (passed through). */
-  git_branch?: string;
-  git_provider?: "github" | "gitlab" | "bitbucket" | "generic";
+  /** Branch to fetch from / push to. Defaults to repo default branch. */
+  git_branch?: string | null;
+  /** Provider hint. Inferred from URL when omitted. */
+  git_provider?: "github" | "gitlab" | "bitbucket" | "generic" | null;
   auto_fetch_on_import?: boolean;
+  /** Push-state: open PR/MR remembered between push sessions. */
+  git_open_pr_branch?: string | null;
+  git_open_pr_url?: string | null;
+  git_open_pr_number?: number | null;
   referenced_diagram_id?: string | null;
   children?: ImportElement[];
   connections?: ImportConnection[];
