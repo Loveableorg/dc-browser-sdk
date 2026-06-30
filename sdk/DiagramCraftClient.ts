@@ -71,9 +71,29 @@ export function assertReplayableHasBase(
 }
 
 
+/**
+ * Optional callback invoked after every successful mutation so that
+ * tutorial-driven SDK use (`it.dc.*`, `it.sc.*`) and other browser/edge
+ * surfaces show up in the diagram activity log alongside direct UI edits.
+ * Fire-and-forget; failures must never bubble up. See `sdkBrowser.ts`
+ * for the canonical browser wiring to `logActivity()`.
+ */
+export type SdkActivityLogger = (
+  evt: {
+    diagramId: string;
+    eventType: string;
+    targetKind?: string | null;
+    targetId?: string | null;
+    targetLabel?: string | null;
+    payload?: Record<string, unknown>;
+  },
+) => void | Promise<void>;
+
 export interface DiagramCraftClientOptions {
   /** Optional default diagram id; methods accept an override per call. */
   diagramId?: string;
+  /** Audit hook — see SdkActivityLogger. Optional. */
+  activityLogger?: SdkActivityLogger;
 }
 
 /**
@@ -89,6 +109,29 @@ export class DiagramCraftClient {
   /** Return a new client bound to a specific diagram id. */
   withDiagram(diagramId: string): DiagramCraftClient {
     return new DiagramCraftClient(this.sb, { ...this.opts, diagramId });
+  }
+
+  /** Fire-and-forget audit emit (no-op when no logger was wired). */
+  protected logActivity(
+    evt: {
+      diagramId: string;
+      eventType: string;
+      targetKind?: string | null;
+      targetId?: string | null;
+      targetLabel?: string | null;
+      payload?: Record<string, unknown>;
+    },
+  ): void {
+    const fn = this.opts.activityLogger;
+    if (!fn) return;
+    try {
+      const r = fn(evt);
+      if (r && typeof (r as Promise<unknown>).then === "function") {
+        (r as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      /* never fail mutations because of audit issues */
+    }
   }
 
   protected requireDiagramId(diagramId?: string): string {
@@ -206,7 +249,15 @@ export class DiagramCraftClient {
   ) {
     const diagramId = this.requireDiagramId(opts.diagramId);
     const parentId = await resolveParentByPath(this.sb, diagramId, opts.parentPath);
-    return await insertElementTree(this.sb, diagramId, parentId, elements);
+    const res = await insertElementTree(this.sb, diagramId, parentId, elements);
+    this.logActivity({
+      diagramId,
+      eventType: "tree.import",
+      targetKind: "diagram",
+      targetId: diagramId,
+      payload: { elements: res.nameToId?.size ?? elements.length, parentPath: opts.parentPath ?? null },
+    });
+    return res;
   }
 
   /**
@@ -236,6 +287,14 @@ export class DiagramCraftClient {
     const id = this.requireDiagramId(diagramId);
     const r = await resolveElementByPath(this.sb, id, path);
     const res = await deleteElementSubtree(this.sb, id, r.id);
+    this.logActivity({
+      diagramId: id,
+      eventType: "element.delete",
+      targetKind: "element",
+      targetId: r.id,
+      targetLabel: r.leafName,
+      payload: { deletedCount: res.deletedIds.length },
+    });
     return { id: r.id, leafName: r.leafName, deletedIds: res.deletedIds };
   }
 
@@ -245,7 +304,15 @@ export class DiagramCraftClient {
     diagramId?: string,
   ) {
     const id = this.requireDiagramId(diagramId);
-    return await deleteElementSubtree(this.sb, id, rootElementId);
+    const res = await deleteElementSubtree(this.sb, id, rootElementId);
+    this.logActivity({
+      diagramId: id,
+      eventType: "element.delete",
+      targetKind: "element",
+      targetId: rootElementId,
+      payload: { deletedCount: res.deletedIds.length },
+    });
+    return res;
   }
 
   /**
@@ -311,6 +378,17 @@ export class DiagramCraftClient {
       .from("diagrams")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", id);
+    const updatedKeys = Object.keys(updates);
+    const isMoveOnly = updatedKeys.length > 0 &&
+      updatedKeys.every((k) => k === "position_x" || k === "position_y");
+    this.logActivity({
+      diagramId: id,
+      eventType: isMoveOnly ? "element.move" : "element.update",
+      targetKind: "element",
+      targetId: elementId,
+      targetLabel: typeof updates.name === "string" ? (updates.name as string) : null,
+      payload: { fields: updatedKeys },
+    });
     return { id: elementId, updated: updates };
   }
 
@@ -337,6 +415,14 @@ export class DiagramCraftClient {
     const nameToId = new Map<string, string>();
     for (const s of siblings ?? []) nameToId.set(s.name, s.id);
     await insertConnections(this.sb, id, nameToId, connections);
+    if (connections.length > 0) {
+      this.logActivity({
+        diagramId: id,
+        eventType: "connection.create",
+        targetKind: "connection",
+        payload: { count: connections.length },
+      });
+    }
   }
 
 
@@ -360,6 +446,13 @@ export class DiagramCraftClient {
     const nameToId = new Map<string, string>();
     for (const r of rows ?? []) nameToId.set(r.name, r.id);
     await insertVariables(this.sb, id, variables, defaultScopeId, nameToId);
+    if (variables.length > 0) {
+      this.logActivity({
+        diagramId: id,
+        eventType: "variable.upsert",
+        payload: { count: variables.length, names: variables.map((v) => v.name).slice(0, 20) },
+      });
+    }
   }
 
   /**
@@ -392,6 +485,14 @@ export class DiagramCraftClient {
     if (error || !newId) {
       throw new Error(`attachSource insert failed: ${error?.message ?? "no id returned"}`);
     }
+    this.logActivity({
+      diagramId: id,
+      eventType: "source_code.attach",
+      targetKind: "element",
+      targetId: elementId,
+      targetLabel: fname ?? null,
+      payload: { sourceCodeId: newId as string },
+    });
     return { sourceCodeId: newId as string };
   }
 

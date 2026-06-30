@@ -235,6 +235,14 @@ export class SpaceCraftClient extends DiagramCraftClient {
         await insertVariables(this.sb, diagramId, payload.variables, defaultScopeId, tree.nameToId);
       }
     }
+    this.logActivity({
+      diagramId,
+      eventType: "diagram.create",
+      targetKind: "diagram",
+      targetId: diagramId,
+      targetLabel: payload.title,
+      payload: { workspaceId, elements: payload.elements?.length ?? 0 },
+    });
     return { id: diagramId, rootIds };
   }
 
