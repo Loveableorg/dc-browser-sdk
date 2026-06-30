@@ -24,6 +24,8 @@ export interface StepValidationReport {
 
 const KNOWN_STEP_TYPES = new Set<string>([
   "standard",
+  "branch",
+  "detour",
   "rich_content",
   "capture_variable",
   "set_variable",
@@ -44,37 +46,86 @@ const KNOWN_STEP_TYPES = new Set<string>([
   "trigger_construct",
 ]);
 
-// Completion events known to the runtime (TutorialProvider + mutation
-// heuristic). Unknown values are warnings — the step will never advance
-// unless the author wires a custom emitter.
+// Completion events known to the runtime. Keep in sync with the
+// TutorialCompletionEvent union in src/components/tutorial/tutorialSteps.ts —
+// unknown values are warnings (the step will never auto-advance unless the
+// author wires a custom emitter).
 const KNOWN_COMPLETION_EVENTS = new Set<string>([
+  // Generic / system
   "manual_advance",
   "text_modal_dismissed",
+  "branch_selected",
+  // Variables
   "variable_captured",
   "variable_set",
-  "branch_resolved",
+  "variable_branch_resolved",
+  // Script / iteration / wait
   "script_completed",
   "iteration_completed",
-  "targets_selected",
-  "annotation_dismissed",
   "condition_met",
+  // Selection / annotation
+  "targets_selected",
+  "source_annotation_dismissed",
+  "element_annotation_dismissed",
+  // Workspace flow
   "workspace_target_selected",
   "workspace_iteration_completed",
   "diagram_opened",
-  "workspace_returned",
-  // Element/source mutation events from MUTATING_COMPLETION_EVENTS
-  "element_created",
-  "element_updated",
+  "workspace_view_opened",
+  // Element / connection mutation
+  "element_added",
+  "element_dragged",
+  "element_expanded",
+  "element_saved",
   "element_deleted",
-  "source_attached",
-  "source_attached_at_path",
-  "source_updated",
-  "tree_scaffolded",
+  "element_duplicated",
   "element_relocated",
+  "element_ejected",
+  "element_nested",
+  "sub_element_added",
+  "drilled_down",
+  "breadcrumb_navigated",
+  "connection_added",
+  "connection_edited",
+  "connection_deleted",
   "connections_imported",
+  "color_changed",
+  "description_added",
+  "edit_opened",
+  "share_toggled",
+  "fit_to_content",
+  // Source / IDE / refs
+  "source_code_attached",
+  "source_attached_at_path",
+  "project_root_set",
+  "json_imported",
+  "git_fetched",
+  "ide_opened",
+  "ide_file_selected",
+  "ide_saved",
+  "ide_reverted",
+  "library_imported",
+  "ask_ai_opened",
+  "markdown_viewed",
+  "mermaid_viewed",
+  "settings_opened",
+  "diagram_ref_added",
+  "menu_opened",
+  "menu_item_clicked",
+  // Path-based scaffolding
   "scope_navigated",
+  "tree_scaffolded",
+  // Archetype / construct
   "archetype_added",
   "construct_triggered",
+  // Legacy aliases still emitted by older steps — accept without warning
+  "annotation_dismissed",
+  "source_attached",
+  "source_updated",
+  "element_created",
+  "element_updated",
+  "branch_resolved",
+  "workspace_returned",
 ]);
 
 function pick<T = unknown>(o: Record<string, unknown>, ...keys: string[]): T | undefined {
@@ -172,12 +223,27 @@ export function validateTutorialStep(
         push(errors, "branchOnVariable", "branch_on_variable step requires a `branchOnVariable` payload.");
         break;
       }
-      if (!isNonEmptyString(pick<string>(bv, "variable"))) {
-        push(errors, "branchOnVariable.variable", "branch_on_variable requires branchOnVariable.variable.");
+      // Runtime shape (src/lib/template/branch.ts): { rules: BranchRule[], defaultChoiceIndex?: number }.
+      // Each rule is either { expression, choiceIndex } or { when: { var, equals|in|contains }, choiceIndex }.
+      const rules = pick<unknown[]>(bv, "rules");
+      if (!isArray(rules) || rules.length === 0) {
+        push(
+          errors,
+          "branchOnVariable.rules",
+          "branch_on_variable requires branchOnVariable.rules (non-empty array of { when|expression, choiceIndex }).",
+        );
       }
-      const cases = pick<unknown[]>(bv, "cases");
-      if (!isArray(cases) || cases.length === 0) {
-        push(errors, "branchOnVariable.cases", "branch_on_variable requires branchOnVariable.cases (non-empty array).");
+      break;
+    }
+    case "branch":
+    case "detour": {
+      const choices = pick<unknown[]>(step, "choices");
+      if (!isArray(choices) || choices.length === 0) {
+        push(
+          errors,
+          "choices",
+          `${type} step requires a non-empty \`choices\` array (each choice has label, description, steps[]).`,
+        );
       }
       break;
     }
