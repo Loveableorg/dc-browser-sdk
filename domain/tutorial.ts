@@ -63,7 +63,11 @@ export type TutorialStepType =
   /** Close a DiagramEditor UI panel (IDE, Ask AI, Variables, …) so a
    *  subsequent step lands on the canvas. Non-mutating; fires
    *  `panel_closed`. See `ClosePanelPayload`. */
-  | "close_panel";
+  | "close_panel"
+  /** Silent scroll + scope-navigate to a diagram element. Non-mutating;
+   *  fires `element_scrolled`. Use `show_element_annotation` when you also
+   *  want a speech bubble. */
+  | "scroll_to_element";
 
 
 export type TutorialPhase = "intro" | "guided_project";
@@ -309,6 +313,13 @@ export interface TutorialStep {
   triggerConstruct?: TriggerConstructStepPayload;
   /** Payload for type: "close_panel". */
   closePanel?: { target: "ide" | "ask_ai" | "variables" | "chat" | "run" | "all" };
+  /** Payload for type: "scroll_to_element". */
+  scrollToElement?: {
+    elementPath?: string;
+    elementVariable?: string;
+    navigateScope?: boolean;
+    settleMs?: number;
+  };
 
   /** Pre-baked JSONB blob — merged underneath the camelCase fields. */
   stepMetadata?: Record<string, unknown> | null;

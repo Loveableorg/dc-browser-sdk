@@ -45,6 +45,7 @@ const KNOWN_STEP_TYPES = new Set<string>([
   "add_archetype",
   "trigger_construct",
   "close_panel",
+  "scroll_to_element",
 ]);
 
 // Completion events known to the runtime. Keep in sync with the
@@ -120,6 +121,7 @@ const KNOWN_COMPLETION_EVENTS = new Set<string>([
   "archetype_added",
   "construct_triggered",
   "panel_closed",
+  "element_scrolled",
   // Legacy aliases still emitted by older steps — accept without warning
   "annotation_dismissed",
   "source_attached",
@@ -417,6 +419,19 @@ export function validateTutorialStep(
           "closePanel.target",
           `close_panel.target must be one of: ${validTargets.join(", ")}.`,
         );
+      }
+      break;
+    }
+    case "scroll_to_element": {
+      const sp = pick<Record<string, unknown>>(step, "scrollToElement", "scroll_to_element");
+      if (!isObject(sp)) {
+        push(errors, "scrollToElement", "scroll_to_element step requires a `scrollToElement` payload.");
+        break;
+      }
+      const hasPath = isNonEmptyString(pick<string>(sp, "elementPath", "element_path"));
+      const hasVar = isNonEmptyString(pick<string>(sp, "elementVariable", "element_variable"));
+      if (!hasPath && !hasVar) {
+        push(errors, "scrollToElement", "scroll_to_element requires `elementPath` or `elementVariable`.");
       }
       break;
     }

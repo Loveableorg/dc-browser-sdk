@@ -55,6 +55,8 @@ const METADATA_KEYS = [
   // close_panel step — imperatively closes an editor UI panel (IDE / Ask AI /
   // Variables / …) so a follow-up step lands on the canvas.
   "closePanel",
+  // scroll_to_element step — silent scroll + scope-navigate to a diagram element.
+  "scrollToElement",
 ] as const;
 
 
