@@ -52,6 +52,9 @@ const METADATA_KEYS = [
   // Construct queue / archetype primitives (see _shared/lib/domain/tutorial.ts).
   "addArchetype",
   "triggerConstruct",
+  // close_panel step — imperatively closes an editor UI panel (IDE / Ask AI /
+  // Variables / …) so a follow-up step lands on the canvas.
+  "closePanel",
 ] as const;
 
 

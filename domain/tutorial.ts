@@ -59,7 +59,11 @@ export type TutorialStepType =
    *  an existing `replayable_installs` row by `installId`, or installs a
    *  fresh workspace-target construct from a catalog lane. Optional
    *  `switchToNow`. See `TriggerConstructStepPayload`. */
-  | "trigger_construct";
+  | "trigger_construct"
+  /** Close a DiagramEditor UI panel (IDE, Ask AI, Variables, …) so a
+   *  subsequent step lands on the canvas. Non-mutating; fires
+   *  `panel_closed`. See `ClosePanelPayload`. */
+  | "close_panel";
 
 
 export type TutorialPhase = "intro" | "guided_project";
@@ -303,6 +307,8 @@ export interface TutorialStep {
   returnToWorkspace?: ReturnToWorkspacePayload;
   addArchetype?: AddArchetypeStepPayload;
   triggerConstruct?: TriggerConstructStepPayload;
+  /** Payload for type: "close_panel". */
+  closePanel?: { target: "ide" | "ask_ai" | "variables" | "chat" | "run" | "all" };
 
   /** Pre-baked JSONB blob — merged underneath the camelCase fields. */
   stepMetadata?: Record<string, unknown> | null;

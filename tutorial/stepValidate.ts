@@ -44,6 +44,7 @@ const KNOWN_STEP_TYPES = new Set<string>([
   "return_to_workspace",
   "add_archetype",
   "trigger_construct",
+  "close_panel",
 ]);
 
 // Completion events known to the runtime. Keep in sync with the
@@ -118,6 +119,7 @@ const KNOWN_COMPLETION_EVENTS = new Set<string>([
   // Archetype / construct
   "archetype_added",
   "construct_triggered",
+  "panel_closed",
   // Legacy aliases still emitted by older steps — accept without warning
   "annotation_dismissed",
   "source_attached",
@@ -398,6 +400,23 @@ export function validateTutorialStep(
       const wsId = pick<string>(tc, "workspaceId", "workspace_id");
       if (!hasInstall && !(isNonEmptyString(lane) && isNonEmptyString(constructId) && isNonEmptyString(wsId))) {
         push(errors, "triggerConstruct", "trigger_construct requires either installId, or (lane + constructId + workspaceId).");
+      }
+      break;
+    }
+    case "close_panel": {
+      const cp = pick<Record<string, unknown>>(step, "closePanel", "close_panel");
+      if (!isObject(cp)) {
+        push(errors, "closePanel", "close_panel step requires a `closePanel` payload.");
+        break;
+      }
+      const target = pick<string>(cp, "target");
+      const validTargets = ["ide", "ask_ai", "variables", "chat", "run", "all"];
+      if (!isNonEmptyString(target) || !validTargets.includes(target)) {
+        push(
+          errors,
+          "closePanel.target",
+          `close_panel.target must be one of: ${validTargets.join(", ")}.`,
+        );
       }
       break;
     }
