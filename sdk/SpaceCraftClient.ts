@@ -227,14 +227,22 @@ export class SpaceCraftClient extends DiagramCraftClient {
     if (payload.elements?.length) {
       const tree = await insertElementTree(this.sb, diagramId, null, payload.elements);
       rootIds = tree.rootIds ?? [];
-      if (payload.connections?.length) {
-        await insertConnections(this.sb, diagramId, tree.nameToId, payload.connections);
+      const allConns = [...(payload.connections ?? []), ...tree.pendingConnections];
+      if (allConns.length) {
+        await insertConnections(this.sb, diagramId, tree.nameToId, allConns);
       }
       if (payload.variables?.length) {
         const defaultScopeId = await resolveParentByPath(this.sb, diagramId, null);
         await insertVariables(this.sb, diagramId, payload.variables, defaultScopeId, tree.nameToId);
       }
+      // Flush per-element scoped variables collected recursively from
+      // element.variables[] at every depth. Without this, nested
+      // `variables:[...]` blocks in the payload silently drop.
+      for (const p of tree.pendingScopedVariables) {
+        await insertVariables(this.sb, diagramId, [p.variable], null, tree.nameToId, p.scopeElementName);
+      }
     }
+
     this.logActivity({
       diagramId,
       eventType: "diagram.create",

@@ -163,12 +163,19 @@ export async function installConstruct(
   const seed = diagramSeedFrom(row);
   const parentId = opts.parentElementId ?? null;
   const tree = await insertElementTree(sb, opts.diagramId, parentId, seed.elements);
-  if (seed.connections.length) {
-    await insertConnections(sb, opts.diagramId, tree.nameToId, seed.connections);
+  const allConns = [...seed.connections, ...tree.pendingConnections];
+  if (allConns.length) {
+    await insertConnections(sb, opts.diagramId, tree.nameToId, allConns);
   }
   if (seed.variables.length) {
     const defaultScopeId = await resolveParentByPath(sb, opts.diagramId, null);
     await insertVariables(sb, opts.diagramId, seed.variables, defaultScopeId, tree.nameToId);
+  }
+  // Flush per-element scoped variables authored inside the seed subtree.
+  // Without this, nested `variables:[...]` blocks in a construct's
+  // importSeed elements silently drop on install.
+  for (const p of tree.pendingScopedVariables) {
+    await insertVariables(sb, opts.diagramId, [p.variable], null, tree.nameToId, p.scopeElementName);
   }
   return {
     diagramIds: [opts.diagramId],
@@ -176,6 +183,7 @@ export async function installConstruct(
     rootElementIds: tree.rootIds ?? [],
   };
 }
+
 
 
 /** Fetch a construct row from the appropriate catalog table and install

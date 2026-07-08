@@ -250,6 +250,15 @@ export class DiagramCraftClient {
     const diagramId = this.requireDiagramId(opts.diagramId);
     const parentId = await resolveParentByPath(this.sb, diagramId, opts.parentPath);
     const res = await insertElementTree(this.sb, diagramId, parentId, elements);
+    // Flush per-element scoped variables + pending connections that
+    // insertElementTree defers to the caller. Without this, `variables:[...]`
+    // and inline `connections:[...]` on subtree elements silently drop.
+    if (res.pendingConnections.length) {
+      await insertConnections(this.sb, diagramId, res.nameToId, res.pendingConnections);
+    }
+    for (const p of res.pendingScopedVariables) {
+      await insertVariables(this.sb, diagramId, [p.variable], null, res.nameToId, p.scopeElementName);
+    }
     this.logActivity({
       diagramId,
       eventType: "tree.import",
@@ -259,6 +268,7 @@ export class DiagramCraftClient {
     });
     return res;
   }
+
 
   /**
    * Merge (upsert by name) a list of children under `parentPath`. Existing
