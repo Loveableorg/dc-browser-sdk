@@ -281,7 +281,33 @@ export class DiagramCraftClient {
   ) {
     const id = this.requireDiagramId(diagramId);
     const parent = await resolveElementByPath(this.sb, id, parentPath);
-    return await mergeChildrenTree(this.sb, id, parent.id, children);
+    const res = await mergeChildrenTree(this.sb, id, parent.id, children);
+    // Emit one activity event per top-level child so tutorial-driven
+    // `it.dc.mergeChildren(...)` calls show up in the audit feed the
+    // same way `insertTree` / `upsert_element` do. Without this, every
+    // SDK-generated element created inside a tutorial silently disappeared
+    // from the activity log.
+    for (const c of res.created) {
+      this.logActivity({
+        diagramId: id,
+        eventType: "element.create",
+        targetKind: "element",
+        targetId: c.id,
+        targetLabel: c.name,
+        payload: { parentPath, via: "mergeChildren" },
+      });
+    }
+    for (const u of res.updated) {
+      this.logActivity({
+        diagramId: id,
+        eventType: "element.update",
+        targetKind: "element",
+        targetId: u.id,
+        targetLabel: u.name,
+        payload: { parentPath, via: "mergeChildren" },
+      });
+    }
+    return res;
   }
 
   /**
