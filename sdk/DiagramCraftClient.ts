@@ -491,14 +491,36 @@ export class DiagramCraftClient {
         }
       }
     }
-    await insertConnections(this.sb, id, nameToId, connections);
-    if (connections.length > 0) {
+    const { inserted, skipped } = await insertConnections(this.sb, id, nameToId, connections);
+    if (inserted > 0) {
       this.logActivity({
         diagramId: id,
         eventType: "connection.create",
         targetKind: "connection",
-        payload: { count: connections.length },
+        payload: { count: inserted },
       });
+    }
+    if (skipped.length > 0) {
+      // Surface every unresolved endpoint to the audit feed so users (and
+      // tutorial authors) see WHY a connection didn't draw. There is no
+      // legitimate skip case — every entry is an authoring bug.
+      for (const s of skipped) {
+        this.logActivity({
+          diagramId: id,
+          eventType: "connection.skipped",
+          targetKind: "connection",
+          targetLabel: `${s.start_element_name} → ${s.end_element_name}`,
+          payload: { reason: s.reason, parentPath },
+        });
+      }
+      // Throw so run_script `catch` blocks (like `it.log('⚠ …')`) fire
+      // with a clear message instead of silently succeeding.
+      const summary = skipped
+        .map((s) => `"${s.start_element_name}" → "${s.end_element_name}" (${s.reason})`)
+        .join(", ");
+      throw new Error(
+        `addConnections: ${skipped.length} of ${connections.length} connection(s) skipped — ${summary}`,
+      );
     }
   }
 
