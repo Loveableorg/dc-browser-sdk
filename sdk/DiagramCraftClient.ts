@@ -432,7 +432,19 @@ export class DiagramCraftClient {
 
 
 
-  /** Add connections between siblings already in the diagram (by name). */
+  /**
+   * Add connections between elements addressed by name.
+   *
+   * Resolution order for each endpoint name:
+   *   1. Direct sibling under `parentPath` (fast path, keeps existing intent).
+   *   2. Diagram-wide lookup by name. When multiple elements share the name,
+   *      the one under `parentPath` wins; otherwise the first match is used
+   *      and a console.warn flags the ambiguity.
+   *
+   * Historically this was siblings-only, which silently dropped connections
+   * whose endpoints lived at a different depth — the exact bug that hid
+   * run_script-drawn connections in the LSL feedback-generator construct.
+   */
   async addConnections(
     parentPath: string | null,
     connections: ImportConnection[],
@@ -440,16 +452,45 @@ export class DiagramCraftClient {
   ) {
     const id = this.requireDiagramId(diagramId);
     const parentId = await resolveParentByPath(this.sb, id, parentPath);
-    let q = this.sb
+
+    // Load ALL elements in the diagram so we can resolve names outside the
+    // immediate parent scope. `parent_element_id` lets us break ties in
+    // favor of the local sibling when a name is duplicated elsewhere.
+    const { data: allRows } = await this.sb
       .from("diagram_elements")
-      .select("id, name")
+      .select("id, name, parent_element_id")
       .eq("diagram_id", id);
-    q = parentId
-      ? q.eq("parent_element_id", parentId)
-      : q.is("parent_element_id", null);
-    const { data: siblings } = await q;
+    const localByName = new Map<string, string>();
+    const anyByName = new Map<string, { id: string; count: number }>();
+    for (const r of allRows ?? []) {
+      const isLocal = (parentId === null)
+        ? r.parent_element_id === null
+        : r.parent_element_id === parentId;
+      if (isLocal && !localByName.has(r.name)) localByName.set(r.name, r.id);
+      const prev = anyByName.get(r.name);
+      anyByName.set(r.name, { id: prev?.id ?? r.id, count: (prev?.count ?? 0) + 1 });
+    }
+    const resolve = (name: string): string | null => {
+      const local = localByName.get(name);
+      if (local) return local;
+      const any = anyByName.get(name);
+      if (!any) return null;
+      if (any.count > 1) {
+        console.warn(
+          `[addConnections] name "${name}" is ambiguous (${any.count} matches) — using first outside parent scope`,
+        );
+      }
+      return any.id;
+    };
     const nameToId = new Map<string, string>();
-    for (const s of siblings ?? []) nameToId.set(s.name, s.id);
+    for (const c of connections) {
+      for (const n of [c.start_element_name, c.end_element_name]) {
+        if (!nameToId.has(n)) {
+          const r = resolve(n);
+          if (r) nameToId.set(n, r);
+        }
+      }
+    }
     await insertConnections(this.sb, id, nameToId, connections);
     if (connections.length > 0) {
       this.logActivity({
