@@ -8,8 +8,18 @@
 // file types.
 
 export interface ImportConnection {
-  start_element_name: string;
-  end_element_name: string;
+  /**
+   * Endpoint addressing. Priority: id > path > name (sibling-first, then
+   * diagram-wide unique). At least one of the three must be provided per
+   * side. Name-only is kept for back-compat but is rejected as ambiguous
+   * when more than one element in the diagram shares that name.
+   */
+  start_element_id?: string | null;
+  start_element_path?: string | null;
+  start_element_name?: string | null;
+  end_element_id?: string | null;
+  end_element_path?: string | null;
+  end_element_name?: string | null;
   start_shape?: string;
   end_shape?: string;
   line_color?: string;
