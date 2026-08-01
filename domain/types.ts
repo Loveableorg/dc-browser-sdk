@@ -68,6 +68,11 @@ export interface ImportElement {
   git_open_pr_url?: string | null;
   git_open_pr_number?: number | null;
   referenced_diagram_id?: string | null;
+  /** Optional source URL. When set, the import pipeline resolves link
+   *  metadata (oEmbed / OpenGraph / file headers) and fills any of
+   *  `name`, `description`, `image_url` that were left blank. The URL is
+   *  always prepended to the description so the element remains a link. */
+  link_url?: string | null;
   children?: ImportElement[];
   connections?: ImportConnection[];
   variables?: ImportVariable[];
