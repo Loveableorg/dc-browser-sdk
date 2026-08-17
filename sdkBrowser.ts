@@ -12,6 +12,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { DiagramCraftClient, type SdkActivityLogger } from "@shared/sdk/DiagramCraftClient.ts";
 import { logActivity } from "@/lib/activityLog";
+import { getConstructRunClient } from "@/lib/constructRunContext";
 
 /**
  * Best-effort extraction of the diagram id the user is currently viewing,
@@ -40,8 +41,11 @@ export const browserSdkActivityLogger: SdkActivityLogger = (evt) => {
 /** Construct a DiagramCraftClient bound to the user's session. */
 export function createBrowserSdk(diagramId?: string | null): DiagramCraftClient {
   const id = diagramId ?? getCurrentDiagramIdFromUrl();
+  // Contributors have no direct write rights; when an approved construct run
+  // is active their writes are routed through the validated run gateway.
+  const client = getConstructRunClient() ?? supabase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new DiagramCraftClient(supabase as any, {
+  return new DiagramCraftClient(client as any, {
     ...(id ? { diagramId: id } : {}),
     activityLogger: browserSdkActivityLogger,
   });

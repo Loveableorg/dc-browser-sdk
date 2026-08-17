@@ -143,4 +143,4 @@ Deno (Supabase Edge Functions) without transformation.
 
 ---
 
-Generated 2026-08-01T16:36:51Z from commit da4aab4f324fa8f0c1a4a1cfcf6cf496ad0ab23f.
+Generated 2026-08-17T11:10:03Z from commit 3158e97dcfe82b61f757a4b5dea118765b4be7fb.
