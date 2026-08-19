@@ -81,6 +81,10 @@ export const DC_SDK_READONLY_METHODS: ReadonlySet<string> = new Set([
   "getElement",
   "getSourceCode",
   "getResolvedScope",
+  // Asset reads (catalog lookups + URL signing — no diagram writes)
+  "getAsset",
+  "getAssetUrl",
+  "listAssets",
   // Client construction helpers (return a re-bound client, no IO yet)
   "withDiagram",
   // Generic JS niceties that may appear on `dc` when authors chain

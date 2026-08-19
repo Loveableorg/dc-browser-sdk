@@ -36,6 +36,18 @@ import {
   type SearchOptions,
 } from "../diagram/searchWorkspace.ts";
 import { ensureBase64 } from "../encoding/base64.ts";
+import {
+  assertCanRead,
+  assertOwned,
+  assetRef,
+  createAsset,
+  decodeBase64,
+  deleteAsset as deleteAssetRow,
+  describeAsset,
+  parseAssetRef,
+  setVisibility,
+} from "../assets/assetOps.ts";
+import type { AssetRow, AssetVisibility } from "../assets/assetOps.ts";
 
 import { NotFoundError, ValidationError } from "../errors/index.ts";
 import { buildStepRows, stripClientKind } from "../tutorial/stepInput.ts";
@@ -835,7 +847,175 @@ export class DiagramCraftClient {
       lane: opts.lane ?? "instance",
     });
   }
+
+  // ─── Assets (bucket-backed files) ───────────────────────────────
+  //
+  // Lets tutorial/construct scripts persist binaries (screenshots, uploads,
+  // exports) into the asset buckets instead of stuffing base64 into session
+  // variables. Same catalog + `can_read_asset` authorization the MCP asset
+  // tools use — this client is just another adapter.
+
+  /** Resolve the acting user id (explicit override → session user). */
+  protected async requireUserId(userId?: string | null): Promise<string> {
+    if (userId) return userId;
+    const { data } = await this.sb.auth.getUser();
+    const id = data.user?.id ?? null;
+    if (!id) throw new ValidationError("No authenticated session — asset operations require a user.");
+    return id;
+  }
+
+  /**
+   * Upload bytes to a bucket and register them in the asset catalog.
+   * Accepts raw bytes, a base64 string, or a `data:` URL.
+   * Returns the describe shape (`asset_id`, `ref`, `url`, …).
+   */
+  async uploadAsset(input: {
+    fileName: string;
+    bytes?: Uint8Array | ArrayBuffer;
+    base64?: string;
+    contentType?: string;
+    visibility?: AssetVisibility;
+    diagramId?: string | null;
+    workspaceId?: string | null;
+    elementId?: string | null;
+    userId?: string;
+  }) {
+    const userId = await this.requireUserId(input.userId);
+    let bytes: Uint8Array | null = null;
+    if (input.bytes) {
+      bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes);
+    } else if (input.base64) {
+      bytes = decodeBase64(input.base64);
+    }
+    if (!bytes) throw new ValidationError("uploadAsset requires `bytes` or `base64`.");
+    const row = await createAsset(this.sb, {
+      userId,
+      fileName: input.fileName,
+      bytes,
+      contentType: input.contentType,
+      visibility: input.visibility ?? "private",
+      diagramId: input.diagramId ?? this.opts.diagramId ?? null,
+      workspaceId: input.workspaceId ?? null,
+      elementId: input.elementId ?? null,
+    });
+    if (row.diagram_id) {
+      this.logActivity({
+        diagramId: row.diagram_id,
+        eventType: "asset.upload",
+        targetKind: "asset",
+        targetId: row.id,
+        targetLabel: row.file_name,
+        payload: { visibility: row.visibility, size_bytes: row.size_bytes },
+      });
+    }
+    return await describeAsset(this.sb, row);
+  }
+
+  /** READ-ONLY. Describe one asset by id or `dc-asset://<id>` ref. */
+  async getAsset(idOrRef: string, opts: { ttlSeconds?: number; userId?: string } = {}) {
+    const userId = await this.requireUserId(opts.userId);
+    const id = parseAssetRef(idOrRef) ?? idOrRef;
+    const row = await assertCanRead(this.sb, id, userId);
+    return await describeAsset(this.sb, row, opts.ttlSeconds);
+  }
+
+  /** READ-ONLY. Directly fetchable URL (public or signed) for an asset. */
+  async getAssetUrl(idOrRef: string, ttlSeconds?: number): Promise<string | null> {
+    const described = await this.getAsset(idOrRef, { ttlSeconds });
+    return described.url;
+  }
+
+  /** READ-ONLY. Assets scoped to a diagram (defaults to the bound diagram). */
+  async listAssets(opts: { diagramId?: string; elementId?: string; limit?: number } = {}) {
+    let q = this.sb.from("assets").select("*").order("created_at", { ascending: false });
+    const diagramId = opts.diagramId ?? this.opts.diagramId;
+    if (diagramId) q = q.eq("diagram_id", diagramId);
+    if (opts.elementId) q = q.eq("element_id", opts.elementId);
+    const { data, error } = await q.limit(opts.limit ?? 100);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as AssetRow[];
+  }
+
+  /**
+   * Point an element's image at an asset — writes the portable
+   * `dc-asset://<id>` reference into `image_url` and scopes the asset row
+   * to that diagram/element.
+   */
+  async attachAssetToElement(opts: {
+    assetId: string;
+    elementId?: string;
+    path?: string;
+    diagramId?: string;
+    showImage?: boolean;
+    usePublicUrl?: boolean;
+    userId?: string;
+  }) {
+    const diagramId = this.requireDiagramId(opts.diagramId);
+    const userId = await this.requireUserId(opts.userId);
+    const assetId = parseAssetRef(opts.assetId) ?? opts.assetId;
+    const row = await assertCanRead(this.sb, assetId, userId);
+    let elementId = opts.elementId ?? null;
+    if (!elementId) {
+      if (!opts.path) throw new ValidationError("attachAssetToElement requires `elementId` or `path`.");
+      elementId = (await resolveElementByPath(this.sb, diagramId, opts.path)).id;
+    }
+    let value = assetRef(row.id);
+    if (opts.usePublicUrl) {
+      if (row.visibility !== "public") {
+        throw new ValidationError("usePublicUrl requires a public asset — call setAssetVisibility first.");
+      }
+      value = (await describeAsset(this.sb, row)).url ?? value;
+    }
+    const showImage = opts.showImage ?? true;
+    const { error } = await this.sb
+      .from("diagram_elements")
+      .update({ image_url: value, show_image: showImage })
+      .eq("id", elementId)
+      .eq("diagram_id", diagramId);
+    if (error) throw new Error(error.message);
+    if (row.owner_id === userId) {
+      await this.sb.from("assets").update({ diagram_id: diagramId, element_id: elementId }).eq("id", row.id);
+    }
+    this.logActivity({
+      diagramId,
+      eventType: "asset.attach",
+      targetKind: "element",
+      targetId: elementId,
+      targetLabel: row.file_name,
+      payload: { asset_id: row.id, image_url: value },
+    });
+    return { elementId, imageUrl: value, showImage };
+  }
+
+  /** Change an asset's visibility (moves the object between buckets). */
+  async setAssetVisibility(opts: {
+    assetId: string;
+    visibility: AssetVisibility;
+    diagramId?: string | null;
+    workspaceId?: string | null;
+    userId?: string;
+  }) {
+    const userId = await this.requireUserId(opts.userId);
+    const id = parseAssetRef(opts.assetId) ?? opts.assetId;
+    const row = await assertOwned(this.sb, id, userId);
+    const next = await setVisibility(this.sb, row, opts.visibility, {
+      ...(opts.diagramId !== undefined ? { diagramId: opts.diagramId } : {}),
+      ...(opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {}),
+    });
+    return await describeAsset(this.sb, next);
+  }
+
+  /** Delete an asset (bucket object + catalog row). Owner only. */
+  async deleteAsset(assetId: string, userId?: string): Promise<{ deleted: string }> {
+    const uid = await this.requireUserId(userId);
+    const id = parseAssetRef(assetId) ?? assetId;
+    const row = await assertOwned(this.sb, id, uid);
+    await deleteAssetRow(this.sb, row);
+    return { deleted: id };
+  }
 }
+
+
 
 
 function decodeUtf8Base64(b64: string): string {
