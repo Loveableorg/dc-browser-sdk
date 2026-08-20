@@ -210,6 +210,57 @@ export class DiagramCraftClient {
     return await resolveScope(this.sb, id, path ?? null);
   }
 
+  /**
+   * Render an Eta template string against the diagram's resolved variable
+   * scope — the same engine, escaping policy (autoEscape OFF) and
+   * `__etaConfig` delimiter handling as the `render_template` MCP tool and
+   * the in-app preview.
+   *
+   * Use this from construct `run_script` steps instead of
+   * `imports: ["eta"]` + hand-rolling an Eta instance: doing it by hand
+   * loses the scope resolution, the `__etaConfig` override and the
+   * attributed error messages.
+   *
+   * ```js
+   * const out = await it.dc.renderTemplate("<%= it.projectName %>", {
+   *   path: "Backups/manifest.json",       // scope element (optional)
+   * });
+   * if (!out.ok) it.log("template failed:", out.error.reason, out.error.fix);
+   * else it.log(out.rendered);
+   * ```
+   *
+   * Pass `scope` to render against an explicit object instead of the
+   * diagram scope (no DB read). Never throws — inspect `ok`.
+   */
+  async renderTemplate(
+    template: string,
+    opts: {
+      path?: string | null;
+      diagramId?: string;
+      /** Explicit scope; skips diagram scope resolution when provided. */
+      scope?: Record<string, unknown>;
+      /** Explicit `__etaConfig` override; defaults to the one on the scope. */
+      etaConfig?: Record<string, unknown> | null;
+    } = {},
+  ) {
+    const { renderTemplate: render } = await import("../diagram/templateRender.ts");
+    let scope = opts.scope;
+    if (!scope) {
+      const id = this.requireDiagramId(opts.diagramId);
+      const { resolveScope } = await import("../diagram/scope.ts");
+      const resolved = await resolveScope(this.sb, id, opts.path ?? null, {
+        materialize: true,
+      });
+      scope = resolved.resolved as Record<string, unknown>;
+    }
+    const cfg = (opts.etaConfig ?? scope.__etaConfig ?? null) as
+      | Record<string, unknown>
+      | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await render(template, scope, cfg as any);
+  }
+
+
   // ─── Search ─────────────────────────────────────────────────────
   /**
    * Workspace- or diagram-scoped substring search across diagram

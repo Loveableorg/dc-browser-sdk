@@ -11,8 +11,16 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { DiagramCraftClient, type SdkActivityLogger } from "@shared/sdk/DiagramCraftClient.ts";
+import { setEtaEngine } from "@shared/diagram/templateRender.ts";
+import { Eta } from "eta";
 import { logActivity } from "@/lib/activityLog";
 import { getConstructRunClient } from "@/lib/constructRunContext";
+
+// The shared renderer lazily loads Eta from esm.sh for the Deno edge runtime.
+// In the browser we already bundle the npm package — inject it so
+// `it.dc.renderTemplate(...)` never hits the network.
+setEtaEngine(Eta);
+
 
 /**
  * Best-effort extraction of the diagram id the user is currently viewing,
