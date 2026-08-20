@@ -85,6 +85,13 @@ export class SpaceCraftClient extends DiagramCraftClient {
     return id;
   }
 
+  /** READ-ONLY. Prefer the bound workspace; fall back to diagram lookup. */
+  override async resolveWorkspaceId(diagramId?: string): Promise<string | null> {
+    if (!diagramId && this.spaceOpts.workspaceId) return this.spaceOpts.workspaceId;
+    return (await super.resolveWorkspaceId(diagramId)) ?? this.spaceOpts.workspaceId ?? null;
+  }
+
+
   /** Re-bind this client to a different diagram while preserving the
    *  workspace binding. Overrides DiagramCraftClient.withDiagram. */
   override withDiagram(diagramId: string): SpaceCraftClient {

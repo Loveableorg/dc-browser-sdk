@@ -156,6 +156,31 @@ export class DiagramCraftClient {
     return id;
   }
 
+  /** Cache for diagram → workspace lookups (see resolveWorkspaceId). */
+  private wsCache = new Map<string, string | null>();
+
+  /**
+   * READ-ONLY. Workspace id that owns the bound (or given) diagram, or null
+   * for personal diagrams. Diagram-bound clients have no workspace in scope,
+   * so asset writes that need workspace scoping (workspace visibility, RLS
+   * membership checks) infer it from the diagram instead of failing with a
+   * null `workspace_id`.
+   */
+  async resolveWorkspaceId(diagramId?: string): Promise<string | null> {
+    const id = diagramId ?? this.opts.diagramId;
+    if (!id) return null;
+    if (this.wsCache.has(id)) return this.wsCache.get(id) ?? null;
+    const { data } = await this.sb
+      .from("diagrams")
+      .select("workspace_id")
+      .eq("id", id)
+      .maybeSingle();
+    const ws = ((data as { workspace_id?: string | null } | null)?.workspace_id) ?? null;
+    this.wsCache.set(id, ws);
+    return ws;
+  }
+
+
   // ─── Reads ─────────────────────────────────────────────────────
   async getElement(path: string, diagramId?: string) {
     const id = this.requireDiagramId(diagramId);
@@ -939,16 +964,24 @@ export class DiagramCraftClient {
       bytes = decodeBase64(input.base64);
     }
     if (!bytes) throw new ValidationError("uploadAsset requires `bytes` or `base64`.");
+    const diagramId = input.diagramId ?? this.opts.diagramId ?? null;
+    // Diagram-bound callers (tutorial/construct scripts) have no workspace in
+    // scope. Infer it from the diagram so workspace-visibility RLS checks pass.
+    const workspaceId =
+      input.workspaceId !== undefined && input.workspaceId !== null
+        ? input.workspaceId
+        : await this.resolveWorkspaceId(diagramId ?? undefined);
     const row = await createAsset(this.sb, {
       userId,
       fileName: input.fileName,
       bytes,
       contentType: input.contentType,
       visibility: input.visibility ?? "private",
-      diagramId: input.diagramId ?? this.opts.diagramId ?? null,
-      workspaceId: input.workspaceId ?? null,
+      diagramId,
+      workspaceId,
       elementId: input.elementId ?? null,
     });
+
     if (row.diagram_id) {
       this.logActivity({
         diagramId: row.diagram_id,
@@ -1049,11 +1082,20 @@ export class DiagramCraftClient {
     const userId = await this.requireUserId(opts.userId);
     const id = parseAssetRef(opts.assetId) ?? opts.assetId;
     const row = await assertOwned(this.sb, id, userId);
+    // Promoting to workspace visibility needs a workspace — infer from the
+    // asset's diagram (or the bound one) when the caller didn't supply one.
+    let workspaceId = opts.workspaceId;
+    if (opts.visibility === "workspace" && !workspaceId && !row.workspace_id) {
+      workspaceId = await this.resolveWorkspaceId(
+        (opts.diagramId ?? row.diagram_id ?? this.opts.diagramId) ?? undefined,
+      );
+    }
     const next = await setVisibility(this.sb, row, opts.visibility, {
       ...(opts.diagramId !== undefined ? { diagramId: opts.diagramId } : {}),
-      ...(opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {}),
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
     });
     return await describeAsset(this.sb, next);
+
   }
 
   /** Delete an asset (bucket object + catalog row). Owner only. */

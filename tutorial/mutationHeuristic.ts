@@ -81,6 +81,8 @@ export const DC_SDK_READONLY_METHODS: ReadonlySet<string> = new Set([
   "getElement",
   "getSourceCode",
   "getResolvedScope",
+  "resolveWorkspaceId",
+
   // Asset reads (catalog lookups + URL signing — no diagram writes)
   "getAsset",
   "getAssetUrl",
