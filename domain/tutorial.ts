@@ -236,12 +236,22 @@ export interface SelectTargetElementsGroup {
   minCount?: number;
   maxCount?: number;
   newElementNameHint?: string;
+  /** Per-group scope override (id wins over path). */
+  rootElementId?: string;
+  rootPath?: string;
+  namePattern?: string;
+  excludeNamePattern?: string;
 }
 
 export interface SelectTargetElementsPayload {
   variableName: string;
   groups: SelectTargetElementsGroup[];
-  scope?: "drop_scope" | "whole_diagram";
+  scope?: "drop_scope" | "whole_diagram" | "element";
+  /** Used with scope:"element" — roots the picker at this element. */
+  scopeRootElementId?: string;
+  scopeRootPath?: string;
+  namePattern?: string;
+  excludeNamePattern?: string;
   title?: string;
   intro?: string;
   buttonLabel?: string;
