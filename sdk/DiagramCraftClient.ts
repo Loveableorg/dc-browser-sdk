@@ -947,7 +947,7 @@ export class DiagramCraftClient {
    */
   async uploadAsset(input: {
     fileName: string;
-    bytes?: Uint8Array | ArrayBuffer;
+    bytes?: Uint8Array | ArrayBuffer | ArrayBufferView | Blob;
     base64?: string;
     contentType?: string;
     visibility?: AssetVisibility;
@@ -959,11 +959,31 @@ export class DiagramCraftClient {
     const userId = await this.requireUserId(input.userId);
     let bytes: Uint8Array | null = null;
     if (input.bytes) {
-      bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes);
+      const raw = input.bytes as unknown;
+      if (typeof Blob !== "undefined" && raw instanceof Blob) {
+        bytes = new Uint8Array(await raw.arrayBuffer());
+      } else if (raw instanceof ArrayBuffer) {
+        bytes = new Uint8Array(raw);
+      } else if (ArrayBuffer.isView(raw as ArrayBufferView)) {
+        const v = raw as ArrayBufferView;
+        bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+      } else {
+        // Cross-realm / plain-object byte bags (e.g. {"0":12,...}) — recover
+        // them instead of silently writing a 0-byte asset.
+        bytes = Uint8Array.from(Object.values(raw as Record<string, number>).filter(
+          (n) => typeof n === "number",
+        ));
+      }
     } else if (input.base64) {
       bytes = decodeBase64(input.base64);
     }
     if (!bytes) throw new ValidationError("uploadAsset requires `bytes` or `base64`.");
+    if (!bytes.byteLength) {
+      throw new ValidationError(
+        `uploadAsset: refusing to upload an empty payload for "${input.fileName}" — the bytes never arrived.`,
+      );
+    }
+
     const diagramId = input.diagramId ?? this.opts.diagramId ?? null;
     // Diagram-bound callers (tutorial/construct scripts) have no workspace in
     // scope. Infer it from the diagram so workspace-visibility RLS checks pass.
