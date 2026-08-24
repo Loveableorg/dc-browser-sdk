@@ -293,13 +293,21 @@ export class DiagramCraftClient {
         const { buildSrcUtilsForTemplate, SRC_UTILS_KEY } = await import(
           "../diagram/srcUtils.ts"
         );
+        const { isSrcHelperEnabledForDiagram } = await import(
+          "../diagram/srcPolicy.ts"
+        );
+        const enabled = await isSrcHelperEnabledForDiagram(this.sb, srcDiagramId);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const srcRender = await makeSyncRenderer(() => scope as Record<string, unknown>, cfg as any);
         (scope as Record<string, unknown>)[SRC_UTILS_KEY] =
           await buildSrcUtilsForTemplate(this.sb, srcDiagramId, template, {
             render: srcRender,
+            scopePath: opts.path ?? null,
+            disabled: !enabled,
+            onWarn: (m) => console.warn(m),
           });
       } catch { /* optional helper */ }
+
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return await render(template, scope, cfg as any);
