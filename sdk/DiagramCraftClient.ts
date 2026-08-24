@@ -270,13 +270,25 @@ export class DiagramCraftClient {
   ) {
     const { renderTemplate: render } = await import("../diagram/templateRender.ts");
     let scope = opts.scope;
+    let srcDiagramId: string | null = opts.diagramId ?? null;
     if (!scope) {
       const id = this.requireDiagramId(opts.diagramId);
+      srcDiagramId = id;
       const { resolveScope } = await import("../diagram/scope.ts");
       const resolved = await resolveScope(this.sb, id, opts.path ?? null, {
         materialize: true,
       });
       scope = resolved.resolved as Record<string, unknown>;
+    }
+    // `it.src` — narrow read-only source-code helper over the same diagram.
+    if (srcDiagramId && (scope as Record<string, unknown>).src === undefined) {
+      try {
+        const { buildSrcUtilsForTemplate, SRC_UTILS_KEY } = await import(
+          "../diagram/srcUtils.ts"
+        );
+        (scope as Record<string, unknown>)[SRC_UTILS_KEY] =
+          await buildSrcUtilsForTemplate(this.sb, srcDiagramId, template);
+      } catch { /* optional helper */ }
     }
     const cfg = (opts.etaConfig ?? scope.__etaConfig ?? null) as
       | Record<string, unknown>
