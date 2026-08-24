@@ -268,7 +268,9 @@ export class DiagramCraftClient {
       etaConfig?: Record<string, unknown> | null;
     } = {},
   ) {
-    const { renderTemplate: render } = await import("../diagram/templateRender.ts");
+    const { renderTemplate: render, makeSyncRenderer } = await import(
+      "../diagram/templateRender.ts"
+    );
     let scope = opts.scope;
     let srcDiagramId: string | null = opts.diagramId ?? null;
     if (!scope) {
@@ -280,21 +282,28 @@ export class DiagramCraftClient {
       });
       scope = resolved.resolved as Record<string, unknown>;
     }
+    const cfg = (opts.etaConfig ?? scope.__etaConfig ?? null) as
+      | Record<string, unknown>
+      | null;
     // `it.src` — narrow read-only source-code helper over the same diagram.
+    // Renderer wired via getter so `{ resolveTemplate: true }` can render a
+    // nested file body against this very scope.
     if (srcDiagramId && (scope as Record<string, unknown>).src === undefined) {
       try {
         const { buildSrcUtilsForTemplate, SRC_UTILS_KEY } = await import(
           "../diagram/srcUtils.ts"
         );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const srcRender = await makeSyncRenderer(() => scope as Record<string, unknown>, cfg as any);
         (scope as Record<string, unknown>)[SRC_UTILS_KEY] =
-          await buildSrcUtilsForTemplate(this.sb, srcDiagramId, template);
+          await buildSrcUtilsForTemplate(this.sb, srcDiagramId, template, {
+            render: srcRender,
+          });
       } catch { /* optional helper */ }
     }
-    const cfg = (opts.etaConfig ?? scope.__etaConfig ?? null) as
-      | Record<string, unknown>
-      | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return await render(template, scope, cfg as any);
+
   }
 
 
