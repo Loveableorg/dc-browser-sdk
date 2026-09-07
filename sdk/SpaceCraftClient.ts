@@ -18,7 +18,7 @@
 // (`SC_SDK_READONLY_METHODS`) for the read-only allow-list — keep it in
 // sync with the methods marked READ-ONLY below.
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.1";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.95.3";
 import { DiagramCraftClient, type DiagramCraftClientOptions } from "./DiagramCraftClient.ts";
 import { ValidationError, NotFoundError } from "../errors/index.ts";
 import type {

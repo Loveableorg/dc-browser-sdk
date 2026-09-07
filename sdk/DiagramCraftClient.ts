@@ -11,7 +11,7 @@
 //     service role = elevated edge access). No privilege escalation here.
 //   - Explicit .ts extensions on every relative import.
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.1";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.95.3";
 import type {
   ImportConnection,
   ImportElement,
