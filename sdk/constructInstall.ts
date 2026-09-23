@@ -27,7 +27,7 @@
 // whatever auth path is correct (SECURITY DEFINER helpers, direct
 // SELECTs under RLS, etc.).
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.95.3";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   findLaunchPoint,
   isImportDiagramSeed,

@@ -11,7 +11,7 @@
 //     service role = elevated edge access). No privilege escalation here.
 //   - Explicit .ts extensions on every relative import.
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.95.3";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   ImportConnection,
   ImportElement,
@@ -602,6 +602,7 @@ export class DiagramCraftClient {
     const nameToId = new Map<string, string>();
     for (const c of connections) {
       for (const n of [c.start_element_name, c.end_element_name]) {
+        if (!n) continue;
         if (!nameToId.has(n)) {
           const r = resolve(n);
           if (r) nameToId.set(n, r);

@@ -23,7 +23,7 @@
  *    state only.
  */
 
-import { Parser } from "npm:acorn@8.11.3";
+import { Parser } from "acorn";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Public contract
