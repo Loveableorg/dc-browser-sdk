@@ -15,6 +15,7 @@ import { setEtaEngine } from "@shared/diagram/templateRender.ts";
 import { Eta } from "eta";
 import { logActivity } from "@/lib/activityLog";
 import { getConstructRunClient } from "@/lib/constructRunContext";
+import { attachConstructNet } from "@/lib/transport/constructSdk";
 
 // The shared renderer lazily loads Eta from esm.sh for the Deno edge runtime.
 // In the browser we already bundle the npm package — inject it so
@@ -53,8 +54,11 @@ export function createBrowserSdk(diagramId?: string | null): DiagramCraftClient 
   // is active their writes are routed through the validated run gateway.
   const client = getConstructRunClient() ?? supabase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new DiagramCraftClient(client as any, {
+  const sdk = new DiagramCraftClient(client as any, {
     ...(id ? { diagramId: id } : {}),
     activityLogger: browserSdkActivityLogger,
   });
+  // it.dc.dcTransport / it.dc.dcDatastore — scoped to the active diagram, invoker session.
+  attachConstructNet(sdk, { diagramId: id });
+  return sdk;
 }
