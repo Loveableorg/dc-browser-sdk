@@ -15,7 +15,7 @@ import { setEtaEngine } from "@shared/diagram/templateRender.ts";
 import { Eta } from "eta";
 import { logActivity } from "@/lib/activityLog";
 import { getConstructRunClient } from "@/lib/constructRunContext";
-import { attachConstructNet } from "@/lib/transport/constructSdk";
+import { attachConstructNet, type ConstructScopeInput } from "@/lib/transport/constructSdk";
 
 // The shared renderer lazily loads Eta from esm.sh for the Deno edge runtime.
 // In the browser we already bundle the npm package — inject it so
@@ -48,7 +48,11 @@ export const browserSdkActivityLogger: SdkActivityLogger = (evt) => {
 };
 
 /** Construct a DiagramCraftClient bound to the user's session. */
-export function createBrowserSdk(diagramId?: string | null): DiagramCraftClient {
+export function createBrowserSdk(
+  diagramId?: string | null,
+  /** Construct context for it.dc.dcTransport / dcDatastore (workspace, diagram, scope element). */
+  net?: ConstructScopeInput,
+): DiagramCraftClient {
   const id = diagramId ?? getCurrentDiagramIdFromUrl();
   // Contributors have no direct write rights; when an approved construct run
   // is active their writes are routed through the validated run gateway.
@@ -58,7 +62,8 @@ export function createBrowserSdk(diagramId?: string | null): DiagramCraftClient 
     ...(id ? { diagramId: id } : {}),
     activityLogger: browserSdkActivityLogger,
   });
-  // it.dc.dcTransport / it.dc.dcDatastore — scoped to the active diagram, invoker session.
-  attachConstructNet(sdk, { diagramId: id });
+  // it.dc.dcTransport / dcDatastore / dcDatastoreFor — invoker session; the
+  // default store matches what previews in this diagram/workspace use.
+  attachConstructNet(sdk, { ...net, diagramId: net?.diagramId ?? id });
   return sdk;
 }
